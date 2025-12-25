@@ -99,7 +99,8 @@ export default function Home() {
       formData.append('file', selectedFile);
       formData.append('timezone', timezone);
 
-      const response = await fetch('http://localhost:8000/api/wrapped/generate', {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiUrl}/api/wrapped/generate`, {
         method: 'POST',
         body: formData,
       });
