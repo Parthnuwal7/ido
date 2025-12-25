@@ -13,8 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "IDO - YouTube Takeout Processor",
+  title: "Ido - YouTube Wrapped",
   description: "Discover insights from your YouTube watch history, search patterns, and subscriptions",
+  icons: {
+    icon: "/ido_icon.png",
+    apple: "/ido_icon.png",
+  },
 };
 
 export default function RootLayout({

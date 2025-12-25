@@ -83,8 +83,8 @@ export function WrappedCard({
         >
             {children}
             {/* Watermark */}
-            <div className="absolute bottom-3 right-4 text-[10px] opacity-40 font-medium">
-                Ido by Parthn7
+            <div className="absolute bottom-3 right-4 text-xs opacity-80 font-medium">
+                Ido by Parthnuwal7
             </div>
         </div>
     );
