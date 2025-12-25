@@ -56,7 +56,7 @@ export function TimezoneSelector({ value, onChange, disabled }: TimezoneSelector
 
     // Try to load all timezones from backend
     useEffect(() => {
-        fetch('http://localhost:8000/api/content/timezones')
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/content/timezones`)
             .then(res => res.json())
             .then(data => {
                 if (data.timezones) {
