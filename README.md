@@ -43,7 +43,7 @@ Also please feel free to contribute to this project. I'm always looking for new 
 
 ## 🎯 Demo
 
-Try the demo with sample data: [Live Demo](/wrapped-demo)
+Try the demo with sample data: [Live Demo]([(https://ido-by-parth.vercel.app/wrapped-demo))
 
 ### Cards Preview
 
