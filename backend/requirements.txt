@@ -1,0 +1,23 @@
+# Python dependencies for IDO Backend
+# Hugging Face Spaces Deployment
+
+# Core FastAPI
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+pydantic==2.5.3
+
+# Date/Time handling
+python-dateutil==2.8.2
+pytz==2024.1
+
+# NLP/ML Models
+spacy>=3.7.0
+
+# HTTP requests (for API calls if needed)
+requests>=2.31.0
+
+# Note: yt-dlp and stanza removed for initial deployment
+# Add back when needed:
+# yt-dlp>=2024.1.0
+# stanza>=1.8.0

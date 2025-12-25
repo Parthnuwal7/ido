@@ -1,0 +1,35 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+.env
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Storage (local dev only)
+storage/*.json
+
+# Tests
+test_*.py
+pytest.ini
+.pytest_cache/
+
+# Misc
+.DS_Store
+*.log
