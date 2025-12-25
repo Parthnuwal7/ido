@@ -25,7 +25,7 @@
 ---
 ## Motivation
 
-I was pretty disappointed with this year's YouTube Wrapped feature and felt that their insights were not enough. I thought it would be fun to create something similar but with more insights and a better design. So, I took inspiration from Spotify Wrapped and created Ido. A platform where you can explore your YouTube journey and get beautiful, shareable insights about your watching habits. It's privacy-first and doesn't store any of your data on our servers. Please free to check it out at [Ido](https://ido.parthnuwal.com).
+I was pretty disappointed with this year's YouTube Wrapped feature and felt that their insights were not enough. I thought it would be fun to create something similar but with more insights and a better design. So, I took inspiration from Spotify Wrapped and created Ido. A platform where you can explore your YouTube journey and get beautiful, shareable insights about your watching habits. It's privacy-first and doesn't store any of your data on our servers. Please free to check it out at [Ido](https://ido-by-parth.vercel.app/wrapped-demo).
 
 Also please feel free to contribute to this project. I'm always looking for new ideas and features to add. Please free to open an issue or submit a pull request. If you like what I'm doing, please consider giving it a star on GitHub. I'm working on adding Topic modelling based insights and more. Stay updated!
 
