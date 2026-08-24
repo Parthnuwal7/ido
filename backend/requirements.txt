@@ -11,11 +11,24 @@ pydantic==2.5.3
 python-dateutil==2.8.2
 pytz==2024.1
 
+# Numerical work for interest clustering (PPMI + SVD + k-means).
+# Already pulled in by spaCy, but declared because services/interest_vectors.py
+# imports it directly. sklearn/scipy are deliberately NOT used - ~100 MB on a free tier.
+numpy>=1.24
+
 # NLP/ML Models
 spacy>=3.7.0
 
-# HTTP requests (for API calls if needed)
+# HTTP requests (Google Data Portability + YouTube Data API)
 requests>=2.31.0
+
+# Env vars from .env (local development)
+python-dotenv>=1.0.0
+
+# Postgres driver for saved Wrapped cards (Supabase).
+# Required: DATABASE_URL must point at a Supabase connection string - there is no
+# SQLite fallback anymore.
+psycopg[binary]>=3.1.0
 
 # Note: yt-dlp and stanza removed for initial deployment
 # Add back when needed:
