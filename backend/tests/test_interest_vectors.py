@@ -12,7 +12,8 @@ from datetime import datetime, timedelta
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from services.interest_vectors import (  # noqa: E402
-    K,
+    MAX_K,
+    MIN_K,
     MIN_VOCAB,
     analyse,
     by_month,
@@ -172,6 +173,57 @@ def test_uniform_viewing_is_not_seasonal():
     assert isinstance(calendar["seasonal"], bool)
 
 
-def test_k_and_floor_are_the_documented_values():
-    assert K == 6
+def test_k_range_and_floor_are_the_documented_values():
+    assert (MIN_K, MAX_K) == (3, 8)
     assert MIN_VOCAB == 12
+
+
+# --- adaptive cluster count --------------------------------------------------------
+
+def test_cluster_count_adapts_to_the_data():
+    """Three well-separated groups should yield three worlds, not a fixed six.
+
+    Forcing K=6 onto three real groups splits them, which is what produced three
+    separate "Pop Music" worlds on real data instead of one.
+    """
+    events = []
+    for day in range(24):
+        events += session(["p1", "p2", "p3", "p4"], day * 3)
+        events += session(["q1", "q2", "q3", "q4"], day * 3 + 1)
+        events += session(["r1", "r2", "r3", "r4"], day * 3 + 2)
+
+    result = analyse(events)
+
+    assert result is not None
+    assert len(result.clusters) == 3, (
+        f"expected 3 worlds for 3 groups, got {len(result.clusters)}"
+    )
+
+
+def test_more_groups_yield_more_clusters_up_to_the_cap():
+    events = []
+    prefixes = "abcdefghij"          # ten disjoint groups, above MAX_K
+    for day in range(24):
+        for offset, prefix in enumerate(prefixes):
+            events += session([f"{prefix}1", f"{prefix}2", f"{prefix}3"],
+                              day * len(prefixes) + offset)
+
+    result = analyse(events)
+
+    assert MIN_K <= len(result.clusters) <= MAX_K
+    assert MAX_K == 8
+
+
+def test_clusters_stay_pure_whatever_k_is_chosen():
+    events = []
+    for day in range(24):
+        events += session(["p1", "p2", "p3", "p4"], day * 3)
+        events += session(["q1", "q2", "q3", "q4"], day * 3 + 1)
+        events += session(["r1", "r2", "r3", "r4"], day * 3 + 2)
+
+    result = analyse(events)
+
+    members = collections.defaultdict(set)
+    for channel, cluster in result.cluster_of.items():
+        members[cluster].add(channel[0])
+    assert not {c: g for c, g in members.items() if len(g) > 1}
