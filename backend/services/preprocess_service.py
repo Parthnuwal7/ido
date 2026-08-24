@@ -77,8 +77,18 @@ def parse_timestamp(time_str: str) -> Optional[str]:
                 return dt.isoformat() + "Z"
             except ValueError:
                 continue
-        
-        return time_str
+
+        # Offset-bearing forms (e.g. "+05:30") that the format list above does not cover.
+        try:
+            dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+        except ValueError:
+            # Echoing the input back would disguise a parse failure as a value, and the
+            # unparseable string then propagates into time conversion. Fail honestly.
+            return None
+
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(pytz.UTC).replace(tzinfo=None)
+        return dt.isoformat() + "Z"
     except Exception:
         return None
 
@@ -139,9 +149,11 @@ def convert_to_local_time(utc_time_str: str, timezone_str: str) -> dict:
         result["month_local"] = dt_local.month  # 1-12
         
         return result
-        
+
     except Exception:
-        return None
+        # Must stay a dict: callers subscript this result directly, so returning None
+        # turns a bad timezone or timestamp into a TypeError that fails the request.
+        return result
 
 
 def is_google_ads(entry: dict) -> bool:
@@ -202,7 +214,22 @@ def enrich_event_with_local_time(event: dict, timezone: str) -> dict:
 def preprocess_watch_history(content: str, timezone: str = "UTC") -> list[dict]:
     """
     Process watch-history.json into normalized Event format.
-    
+
+    Thin wrapper over preprocess_watch_entries so there is only one implementation.
+    The HTML connector already holds parsed dicts and calls that directly.
+    """
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        return []
+
+    return preprocess_watch_entries(data, timezone)
+
+
+def preprocess_watch_entries(entries: list, timezone: str = "UTC") -> list[dict]:
+    """
+    Process watch-history entry dicts into normalized Event format.
+
     Rules:
     1. Drop Google Ads entries
     2. Drop YouTube post entries
@@ -212,17 +239,12 @@ def preprocess_watch_history(content: str, timezone: str = "UTC") -> list[dict]:
     6. Detect language
     7. Convert timestamp to local
     """
-    try:
-        data = json.loads(content)
-    except json.JSONDecodeError:
+    if not isinstance(entries, list):
         return []
-    
-    if not isinstance(data, list):
-        return []
-    
+
     events = []
-    
-    for entry in data:
+
+    for entry in entries:
         # Skip Google Ads
         if is_google_ads(entry):
             continue
@@ -293,23 +315,32 @@ def preprocess_search_history(content: str, timezone: str = "UTC") -> list[dict]
     """
     Process search-history.json into normalized Event format.
     
+    Thin wrapper over preprocess_search_entries so there is only one implementation.
+    """
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        return []
+
+    return preprocess_search_entries(data, timezone)
+
+
+def preprocess_search_entries(entries: list, timezone: str = "UTC") -> list[dict]:
+    """
+    Process search-history entry dicts into normalized Event format.
+
     Rules:
     1. Extract timestamp from "time" field
     2. Remove "Searched for" prefix from title
     3. Detect language
     4. Convert timestamp to local
     """
-    try:
-        data = json.loads(content)
-    except json.JSONDecodeError:
+    if not isinstance(entries, list):
         return []
-    
-    if not isinstance(data, list):
-        return []
-    
+
     events = []
-    
-    for entry in data:
+
+    for entry in entries:
         title = entry.get("title", "")
         
         # Get raw text (after removing "Searched for" prefix)
@@ -396,6 +427,23 @@ def preprocess_subscriptions(content: str, timezone: str = "UTC") -> list[dict]:
     return events
 
 
+def _watch_events_from_html(content: str, timezone: str) -> list[dict]:
+    """Takeout's default HTML export, routed through the same connector as an upload."""
+    from services.takeout_html_mapper import to_watch_entries
+    from services.takeout_html_scanner import scan
+
+    entries, _report = to_watch_entries(scan(content), timezone)
+    return preprocess_watch_entries(entries, timezone)
+
+
+def _search_events_from_html(content: str, timezone: str) -> list[dict]:
+    from services.takeout_html_mapper import to_search_entries
+    from services.takeout_html_scanner import scan
+
+    entries, _report = to_search_entries(scan(content), timezone)
+    return preprocess_search_entries(entries, timezone)
+
+
 def preprocess_all_files(files: list[dict], timezone: str = "UTC") -> dict:
     """
     Process all files and combine results.
@@ -429,15 +477,18 @@ def preprocess_all_files(files: list[dict], timezone: str = "UTC") -> dict:
     for file in files:
         filename = file.get("filename", "")
         content = file.get("content", "")
-        
+        is_html = file.get("content_type") == "html"
+
         if filename == "watch-history.json":
-            events = preprocess_watch_history(content, timezone)
+            events = (_watch_events_from_html(content, timezone) if is_html
+                      else preprocess_watch_history(content, timezone))
             results["watch_history"] = events
             results["stats"]["total_watch"] = len(events)
             results["combined_events"].extend(events)
             
         elif filename == "search-history.json":
-            events = preprocess_search_history(content, timezone)
+            events = (_search_events_from_html(content, timezone) if is_html
+                      else preprocess_search_history(content, timezone))
             results["search_history"] = events
             results["stats"]["total_search"] = len(events)
             results["combined_events"].extend(events)
