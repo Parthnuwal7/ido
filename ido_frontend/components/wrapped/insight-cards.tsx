@@ -150,7 +150,7 @@ export function DiscoveryArcCard({
                     : 'You held steady';
 
     return (
-        <WrappedCard theme="gradient1">
+        <WrappedCard theme="navy">
             <GridPattern className="inset-0 w-full h-full opacity-10" />
 
             <WrappedCardHeader
@@ -191,21 +191,48 @@ export function DiscoveryArcCard({
                         <polyline
                             points={line('top10_share')}
                             fill="none"
-                            stroke="#ffffff"
+                            stroke="#5EEAD4"
                             strokeWidth="2"
                             strokeLinecap="round"
-                            opacity="0.55"
                         />
+
+                        {/* Direct labels at each line start and end, so a value can be
+                            read off the chart without tracing back to the legend. */}
+                        {(['novelty_rate', 'top10_share'] as const).map((key) =>
+                            [0, months.length - 1].map((i) => {
+                                const colour =
+                                    key === 'novelty_rate' ? '#FFDD00' : '#5EEAD4';
+                                const x =
+                                    pad +
+                                    (i / Math.max(months.length - 1, 1)) * (w - pad * 2);
+                                const y = h - pad - months[i][key] * (h - pad * 2);
+                                return (
+                                    <g key={`${key}-${i}`}>
+                                        <circle cx={x} cy={y} r="3" fill={colour} />
+                                        <text
+                                            x={i === 0 ? x + 6 : x - 6}
+                                            y={y - 7}
+                                            fill={colour}
+                                            fontSize="11"
+                                            fontWeight="700"
+                                            textAnchor={i === 0 ? 'start' : 'end'}
+                                        >
+                                            {Math.round(months[i][key] * 100)}%
+                                        </text>
+                                    </g>
+                                );
+                            })
+                        )}
                     </svg>
                 )}
 
-                <div className="flex gap-4 justify-center text-xs mb-4">
+                <div className="flex gap-5 justify-center text-xs mb-5">
                     <span className="flex items-center gap-1.5">
-                        <span className="w-3 h-[2px] rounded bg-[#FFDD00]" />
+                        <span className="w-4 h-[3px] rounded bg-[#FFDD00]" />
                         new channels
                     </span>
                     <span className="flex items-center gap-1.5">
-                        <span className="w-3 h-[2px] rounded bg-white/60" />
+                        <span className="w-4 h-[3px] rounded bg-[#5EEAD4]" />
                         top-10 share
                     </span>
                 </div>
@@ -248,7 +275,7 @@ interface TasteWorldsCardProps {
  * of once-watched channels cannot be placed in any world.
  */
 export function TasteWorldsCard({ worlds, coverage }: TasteWorldsCardProps) {
-    const shown = worlds.slice(0, 6);
+    const shown = worlds.slice(0, 8);
     const axes = Math.max(shown.length, 3);
     const peak = Math.max(...shown.map((w) => w.share), 0.01);
 
@@ -352,6 +379,59 @@ interface TasteCalendarCardProps {
     seasonal: boolean;
 }
 
+const FULL_MONTHS = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+/**
+ * The two most interesting things the grid shows, in words.
+ *
+ * A heatmap rewards study; a Wrapped card gets a few seconds. These pull out the
+ * peak ("April was your cricket month") and the clearest rise ("you grew into pop
+ * music") so the card says something even to someone who never reads the grid.
+ */
+function calendarTakeaways(
+    months: string[],
+    worlds: { label: string; name: string | null; shares: number[] }[]
+): string[] {
+    const nameOf = (world: { label: string; name: string | null }) =>
+        world.name || world.label.split(' \u00b7 ')[0];
+    const monthName = (i: number) =>
+        FULL_MONTHS[Math.max(0, parseInt(months[i]?.slice(5, 7) ?? '1', 10) - 1)];
+
+    const out: string[] = [];
+
+    let peak = { world: '', month: 0, share: 0 };
+    worlds.forEach((world) => {
+        world.shares.forEach((share, i) => {
+            if (share > peak.share) peak = { world: nameOf(world), month: i, share };
+        });
+    });
+    if (peak.share > 0.3) {
+        out.push(
+            `${monthName(peak.month)} was your ${peak.world.toLowerCase()} month \u2014 ` +
+            `${Math.round(peak.share * 100)}% of it went there`
+        );
+    }
+
+    if (months.length >= 4) {
+        const third = Math.max(1, Math.floor(months.length / 3));
+        const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / (xs.length || 1);
+        let rise = { world: '', delta: 0 };
+        worlds.forEach((world) => {
+            const delta =
+                mean(world.shares.slice(-third)) - mean(world.shares.slice(0, third));
+            if (delta > rise.delta) rise = { world: nameOf(world), delta };
+        });
+        if (rise.delta > 0.05) {
+            out.push(`You grew into ${rise.world.toLowerCase()} as the year went on`);
+        }
+    }
+
+    return out.slice(0, 2);
+}
+
 const MONTH_LETTERS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
 
 /**
@@ -360,8 +440,9 @@ const MONTH_LETTERS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D
  * is nothing for a colourblind reader to disambiguate by hue.
  */
 export function TasteCalendarCard({ months, worlds, seasonal }: TasteCalendarCardProps) {
-    const shown = worlds.slice(0, 6);
+    const shown = worlds.slice(0, 8);
     const peak = Math.max(...shown.flatMap((w) => w.shares), 0.01);
+    const takeaways = calendarTakeaways(months, shown);
 
     const letterFor = (month: string) =>
         MONTH_LETTERS[Math.max(0, parseInt(month.slice(5, 7), 10) - 1)] ?? '';
@@ -414,8 +495,19 @@ export function TasteCalendarCard({ months, worlds, seasonal }: TasteCalendarCar
                     </div>
                 </div>
 
-                <p className="text-xs text-center opacity-70 mt-4">
-                    Darker means more of that month went to that world
+                <div className="mt-5 space-y-2 w-full">
+                    {takeaways.map((line, i) => (
+                        <div
+                            key={i}
+                            className="p-3 bg-white/10 rounded-xl text-sm leading-snug"
+                        >
+                            {line}
+                        </div>
+                    ))}
+                </div>
+
+                <p className="text-[11px] text-center opacity-60 mt-4">
+                    Brighter means more of that month went to that world
                 </p>
             </WrappedCardContent>
         </WrappedCard>
