@@ -50,3 +50,15 @@ def load_demo_cards() -> Dict:
         metadata["parse_report"] = result.report
 
     return cards
+
+
+def demo_archive_bytes() -> bytes:
+    """The seeded Takeout archive, for the browser to upload as if it were its own.
+
+    Serving the file rather than the finished cards means the demo travels the exact
+    same path as a real export -- member location, format detection, the HTML
+    connector, timestamp resolution, year filtering, preprocessing, enrichment -- so
+    it cannot keep working after the parts it showcases have broken.
+    """
+    with open(DEMO_TAKEOUT, "rb") as archive:
+        return archive.read()

@@ -18,10 +18,10 @@ import zipfile
 from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from services import interest_vectors
-from services.demo_service import load_demo_cards
+from services.demo_service import DEMO_YEAR, demo_archive_bytes, load_demo_cards
 from services.takeout_ingest import HistoryParseError, build_enrichment, ingest_zip
 from services.wrapped_service import generate_wrapped_cards
 
@@ -129,3 +129,31 @@ def generate_demo():
         raise HTTPException(status_code=500, detail=f"Demo unavailable: {exc}")
 
     return JSONResponse(content=cards)
+
+
+@wrapped_router.get("/demo-file")
+def demo_file():
+    """The seeded Takeout archive, for the browser to submit like a real upload.
+
+    The demo used to call its own endpoint, which skipped everything between the ZIP
+    and the cards. Handing the browser the actual file means "Try the demo" exercises
+    the same route a user's own export does, and breaks in the same places.
+
+    X-Demo-Year tells the client which year the archive covers, so the year selector
+    does not send the current year at an archive that has no history for it.
+    """
+    try:
+        data = demo_archive_bytes()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[ERROR] Demo archive unavailable: {exc}")
+        raise HTTPException(status_code=500, detail="Demo file unavailable")
+
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="ido-demo-takeout.zip"',
+            "X-Demo-Year": str(DEMO_YEAR),
+            "Access-Control-Expose-Headers": "X-Demo-Year",
+        },
+    )
