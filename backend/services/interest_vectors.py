@@ -21,9 +21,13 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-K = 6                      # taste worlds; fixed to fit the card layout
+# Cluster count is chosen per user rather than fixed. Forcing one K splits real
+# groups: at K=6 a viewer with three genuine music worlds got "Pop Music and
+# Electronic", "Pop Music and Film" and "Pop Music and Asia" as separate worlds.
+MIN_K = 3
+MAX_K = 8                  # more than this stops reading as "worlds" on a card
+MIN_VOCAB = 12             # below this, do not cluster at all
 MIN_SESSIONS = 8           # sessions a channel must appear in to be embeddable
-MIN_VOCAB = 2 * K          # 12 -- below this, do not cluster at all
 SESSION_GAP_MINUTES = 30
 MAX_SESSION_CHANNELS = 50  # a longer sitting is autoplay drift, not deliberate pairing
 SVD_DIMS = 32
@@ -116,6 +120,51 @@ def _kmeans(points: np.ndarray, k: int, seed: int = SEED, iterations: int = 60):
     return best_labels
 
 
+def _silhouette(points: np.ndarray, labels: np.ndarray) -> float:
+    """Mean silhouette score: how well each point sits in its own cluster.
+
+    For each point, a = mean distance to its own cluster, b = mean distance to the
+    nearest other cluster; the score is (b - a) / max(a, b). Near 1 means tight and
+    well separated, near 0 means the split is arbitrary. This is what lets the code
+    prefer three real worlds over six invented ones.
+    """
+    unique = np.unique(labels)
+    if len(unique) < 2 or len(unique) >= len(points):
+        return -1.0
+
+    distances = np.sqrt(
+        np.maximum(((points[:, None, :] - points[None, :, :]) ** 2).sum(-1), 0)
+    )
+    scores = []
+    for i in range(len(points)):
+        own = labels[i]
+        same = labels == own
+        same[i] = False
+        if not same.any():
+            continue                      # a lone point has no cohesion to measure
+        a = distances[i, same].mean()
+        b = min(
+            distances[i, labels == other].mean()
+            for other in unique if other != own and (labels == other).any()
+        )
+        denominator = max(a, b)
+        if denominator > 0:
+            scores.append((b - a) / denominator)
+    return float(np.mean(scores)) if scores else -1.0
+
+
+def _best_labels(points: np.ndarray) -> np.ndarray:
+    """Cluster at every K in range and keep the best-separated result."""
+    upper = min(MAX_K, len(points) - 1)
+    best_labels, best_score = None, None
+    for k in range(MIN_K, max(upper, MIN_K) + 1):
+        labels = _kmeans(points, k)
+        score = _silhouette(points, labels)
+        if best_score is None or score > best_score:
+            best_labels, best_score = labels, score
+    return best_labels if best_labels is not None else _kmeans(points, MIN_K)
+
+
 def analyse(watch_events: List[Dict]) -> Optional[InterestResult]:
     """Cluster channels into taste worlds, or None when the data cannot support it."""
     sessions = _sessions(watch_events)
@@ -153,7 +202,7 @@ def analyse(watch_events: List[Dict]) -> Optional[InterestResult]:
     norms = np.linalg.norm(embedding, axis=1, keepdims=True)
     embedding = embedding / (norms + 1e-9)
 
-    labels = _kmeans(embedding, K)
+    labels = _best_labels(embedding)
     cluster_of = {channel: int(labels[index[channel]]) for channel in vocab}
 
     watch_counts = Counter(
