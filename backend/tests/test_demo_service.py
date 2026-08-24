@@ -97,3 +97,32 @@ def test_the_html_connector_actually_ran():
 def test_result_is_cached_between_calls():
     """The fixtures never change at runtime, so the pipeline should run once."""
     assert load_demo_cards() is load_demo_cards()
+
+
+# --- serving the archive for the upload flow ---------------------------------------
+
+def test_demo_archive_bytes_are_readable():
+    """The demo is served as a real ZIP so the browser can feed it through the same
+    upload path as a user's own export, rather than a separate endpoint that skips
+    the locator, the connector and year filtering."""
+    from services.demo_service import demo_archive_bytes
+
+    data = demo_archive_bytes()
+
+    assert data[:2] == b"PK", "should be a ZIP archive"
+    assert len(data) > 10_000
+
+
+def test_demo_archive_round_trips_through_the_normal_ingest():
+    import io
+    import zipfile
+
+    from services.demo_service import demo_archive_bytes
+    from services.takeout_ingest import ingest_zip
+
+    data = demo_archive_bytes()
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        assert any(n.endswith("watch-history.html") for n in archive.namelist())
+
+    result = ingest_zip(io.BytesIO(data), "UTC", year=DEMO_YEAR)
+    assert result.stats["total_watch"] > 2000
