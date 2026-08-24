@@ -5,6 +5,10 @@ Based on cards_doc.md specification.
 """
 
 from collections import Counter, defaultdict
+
+from services import discovery, interest_vectors, personality, viewing_style
+from services.cluster_naming import channel_label
+from services.pattern_mining import find_patterns
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 import re
@@ -43,7 +47,7 @@ def generate_wrapped_cards(events: List[Dict], stats: Dict) -> Dict:
         "watch_cycle": generate_watch_cycle_card(watch_events),
         "peak_day": generate_peak_day_card(watch_events),
         "longest_streak": generate_longest_streak_card(watch_events),
-        "personality": generate_personality_card(),  # Hardcoded for now
+        "personality": generate_personality_card(watch_events),
         "binge_sessions": generate_binge_sessions_card(watch_events),
         "late_night": generate_late_night_card(watch_events),
         "habits": generate_habits_card(watch_events),
@@ -68,10 +72,14 @@ def generate_wrapped_cards(events: List[Dict], stats: Dict) -> Dict:
 # ============================================
 
 def generate_intro_card(stats: Dict) -> Dict:
-    """Generate intro card data."""
+    """Generate intro card data.
+
+    The year comes from stats so the label matches the data the cards were built from;
+    falling back to the current year only when the caller did not filter by year.
+    """
     return {
         "username": "there",  # Could be extracted from data if available
-        "year": datetime.now().year
+        "year": stats.get("year") or datetime.now().year
     }
 
 
@@ -376,12 +384,13 @@ def generate_longest_streak_card(watch_events: List[Dict]) -> Dict:
 # PERSONALITY CARD (HARDCODED)
 # ============================================
 
-def generate_personality_card() -> Dict:
-    """Generate personality card data (hardcoded for now)."""
-    return {
-        "type": "Curious Mind",
-        "description": "You dive deep into diverse topics"
-    }
+def generate_personality_card(watch_events: List[Dict]) -> Dict:
+    """Derive the viewing archetype from the data.
+
+    See services.personality: each axis is scored as observed share against the share
+    expected by chance, and only axes with a real chance baseline can decide the label.
+    """
+    return personality.analyse(watch_events)
 
 
 # ============================================
@@ -744,209 +753,130 @@ def generate_first_last_card(watch_events: List[Dict]) -> Dict:
 # ============================================
 
 def generate_patterns_card(watch_events: List[Dict]) -> Dict:
+    """Discover viewing patterns via association-rule mining.
+
+    Delegates to services.pattern_mining, which scores every rule by support,
+    confidence and lift so different rule types can be ranked against each other.
+
+    The previous implementation gated eligible channels at
+    max(10, len(watch_events) // 100). Because that scaled with total watches, a heavy
+    viewer needed hundreds of watches on a single channel to qualify and saw no patterns
+    at all, while a lighter viewer with identical habits saw several. The gate is now an
+    absolute support floor.
     """
-    Discover viewing patterns using lightweight association rule mining.
-    
-    Focus on TOP CHANNELS ONLY to avoid noise from rarely-watched channels.
-    
-    Patterns detected:
-    1. Channel + Day of week (e.g., "You watch X every Sunday")
-    2. Channel + Time of day (e.g., "You watch X in the mornings")
-    3. Weekend preference (e.g., "X is your weekend channel")
-    """
-    day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-    time_slots = {
-        "morning": (5, 12),    # 5 AM - 12 PM
-        "afternoon": (12, 17), # 12 PM - 5 PM
-        "evening": (17, 21),   # 5 PM - 9 PM
-        "night": (21, 24),     # 9 PM - 12 AM
-        "late night": (0, 5),  # 12 AM - 5 AM
-    }
-    
-    # First, identify TOP CHANNELS (top 20 by watch count)
-    channel_counts = Counter(
-        e.get("channel_clean") for e in watch_events 
-        if e.get("channel_clean")
-    )
-    
-    if not channel_counts:
-        return {"total_patterns": 0, "top_patterns": [], "insights": []}
-    
-    # Get top 20 channels (or fewer if user watched less)
-    top_channels = set(ch for ch, _ in channel_counts.most_common(20))
-    
-    # Also require minimum 10 watches to be considered
-    min_watches = max(10, len(watch_events) // 100)  # At least 1% of total or 10
-    top_channels = {ch for ch in top_channels if channel_counts[ch] >= min_watches}
-    
-    if not top_channels:
-        return {"total_patterns": 0, "top_patterns": [], "insights": []}
-    
-    patterns = []
-    
-    # 1. Channel + Day of Week associations (top channels only)
-    channel_day_patterns = find_channel_day_patterns(watch_events, day_names, top_channels)
-    patterns.extend(channel_day_patterns)
-    
-    # 2. Channel + Time Slot associations (top channels only)
-    channel_time_patterns = find_channel_time_patterns(watch_events, time_slots, top_channels)
-    patterns.extend(channel_time_patterns)
-    
-    # 3. Weekend vs Weekday preferences (top channels only)
-    weekend_pattern = find_weekend_pattern(watch_events, top_channels)
-    if weekend_pattern:
-        patterns.append(weekend_pattern)
-    
-    # Sort by a combined score: confidence * watch_count (prioritize high-volume patterns)
-    patterns.sort(key=lambda x: x.get("confidence", 0) * x.get("count", 1), reverse=True)
-    
-    # Take top 5 patterns
-    top_patterns = patterns[:5]
-    
+    patterns = find_patterns(watch_events)
+
     return {
         "total_patterns": len(patterns),
-        "top_patterns": top_patterns,
-        "insights": [p["insight"] for p in top_patterns]
+        "top_patterns": patterns,
+        "insights": [p["insight"] for p in patterns],
     }
 
 
-def find_channel_day_patterns(watch_events: List[Dict], day_names: List[str], top_channels: set) -> List[Dict]:
-    """Find channels that are strongly associated with specific days (top channels only)."""
-    # Count channel occurrences per day
-    channel_day_counts = defaultdict(lambda: defaultdict(int))
-    channel_total = defaultdict(int)
-    day_total = defaultdict(int)
-    
-    for e in watch_events:
-        channel = e.get("channel_clean")
-        day = e.get("day_of_week")
-        if channel and day is not None and channel in top_channels:
-            channel_day_counts[channel][day] += 1
-            channel_total[channel] += 1
-            day_total[day] += 1
-    
-    total_events = sum(channel_total.values())
-    
-    patterns = []
-    
-    for channel, day_counts in channel_day_counts.items():
-        for day, count in day_counts.items():
-            # Calculate confidence: P(day | channel)
-            confidence = count / channel_total[channel] if channel_total[channel] > 0 else 0
-            
-            # Calculate lift: how much more likely vs random
-            expected = (channel_total[channel] * day_total[day]) / total_events if total_events > 0 else 0
-            lift = count / expected if expected > 0 else 0
-            
-            # Strong pattern: confidence > 30% AND lift > 1.5 AND at least 5 occurrences
-            if confidence >= 0.30 and lift >= 1.5 and count >= 5:
-                day_name = day_names[day] if 0 <= day < 7 else "Unknown"
-                patterns.append({
-                    "type": "channel_day",
-                    "channel": channel,
-                    "day": day_name,
-                    "confidence": confidence,
-                    "lift": lift,
-                    "count": count,
-                    "insight": f"You watch **{channel}** on **{day_name}s** ({int(confidence*100)}% of the time)"
-                })
-    
-    return patterns
+# ============================================
+# VIEWING STYLE, DISCOVERY, AND TASTE CARDS
+# ============================================
+
+def generate_viewing_mode_card(watch_events: List[Dict]) -> Dict:
+    """How the watching happened: swiping versus sitting down with something."""
+    return viewing_style.analyse(watch_events)
 
 
-def find_channel_time_patterns(watch_events: List[Dict], time_slots: Dict, top_channels: set) -> List[Dict]:
-    """Find channels associated with specific time slots (top channels only)."""
-    
-    def get_time_slot(hour: int) -> Optional[str]:
-        for slot_name, (start, end) in time_slots.items():
-            if slot_name == "late night":
-                if hour >= 0 and hour < 5:
-                    return slot_name
-            elif start <= hour < end:
-                return slot_name
+def generate_discovery_arc_card(watch_events: List[Dict]) -> Dict:
+    """Novelty and concentration across the year."""
+    return discovery.analyse(watch_events)
+
+
+def generate_taste_worlds_card(interest, names: Dict[int, str]) -> Optional[Dict]:
+    """The clusters, named where possible and always labelled by their own channels.
+
+    None when the history could not support clustering -- the card is then omitted
+    rather than shown empty.
+    """
+    if interest is None:
         return None
-    
-    # Count channel occurrences per time slot
-    channel_slot_counts = defaultdict(lambda: defaultdict(int))
-    channel_total = defaultdict(int)
-    slot_total = defaultdict(int)
-    
-    for e in watch_events:
-        channel = e.get("channel_clean")
-        hour = e.get("hour_local")
-        if channel and hour is not None and channel in top_channels:
-            slot = get_time_slot(hour)
-            if slot:
-                channel_slot_counts[channel][slot] += 1
-                channel_total[channel] += 1
-                slot_total[slot] += 1
-    
-    total_events = sum(slot_total.values())
-    
-    patterns = []
-    
-    for channel, slot_counts in channel_slot_counts.items():
-        for slot, count in slot_counts.items():
-            confidence = count / channel_total[channel] if channel_total[channel] > 0 else 0
-            expected = (channel_total[channel] * slot_total[slot]) / total_events if total_events > 0 else 0
-            lift = count / expected if expected > 0 else 0
-            
-            # Strong pattern: confidence > 40% AND lift > 1.5 AND at least 5 occurrences
-            if confidence >= 0.40 and lift >= 1.5 and count >= 5:
-                time_phrase = {
-                    "morning": "in the mornings",
-                    "afternoon": "in the afternoons", 
-                    "evening": "in the evenings",
-                    "night": "at night",
-                    "late night": "during late nights"
-                }.get(slot, slot)
-                
-                patterns.append({
-                    "type": "channel_time",
-                    "channel": channel,
-                    "time_slot": slot,
-                    "confidence": confidence,
-                    "lift": lift,
-                    "count": count,
-                    "insight": f"**{channel}** is your **{slot}** go-to ({int(confidence*100)}%)"
-                })
-    
-    return patterns
+
+    worlds = []
+    for cluster in interest.clusters:
+        worlds.append({
+            "label": channel_label(cluster["channels"]),
+            "name": names.get(cluster["index"]),
+            "channels": cluster["channels"][:3],
+            "share": cluster["share"],
+            "watches": cluster["watches"],
+        })
+
+    return {
+        "worlds": worlds,
+        "coverage": interest.coverage,
+        "channels_clustered": interest.vocab_size,
+    }
 
 
-def find_weekend_pattern(watch_events: List[Dict], top_channels: set) -> Optional[Dict]:
-    """Find if watching behavior differs significantly on weekends (top channels only)."""
-    weekday_channels = defaultdict(int)
-    weekend_channels = defaultdict(int)
-    
-    for e in watch_events:
-        channel = e.get("channel_clean")
-        day = e.get("day_of_week")
-        if channel and day is not None and channel in top_channels:
-            if day in [5, 6]:  # Saturday, Sunday
-                weekend_channels[channel] += 1
-            else:
-                weekday_channels[channel] += 1
-    
-    # Find channels that are predominantly weekend
-    weekend_exclusive = []
-    for channel, weekend_count in weekend_channels.items():
-        weekday_count = weekday_channels.get(channel, 0)
-        total = weekend_count + weekday_count
-        if total >= 10:  # Need at least 10 total watches
-            weekend_ratio = weekend_count / total
-            if weekend_ratio >= 0.6:  # 60%+ on weekends
-                weekend_exclusive.append((channel, weekend_ratio, total))
-    
-    if weekend_exclusive:
-        top = max(weekend_exclusive, key=lambda x: x[2])  # Most watched
-        return {
-            "type": "weekend_preference",
-            "channel": top[0],
-            "confidence": top[1],
-            "count": top[2],
-            "insight": f"**{top[0]}** is your **weekend** channel ({int(top[1]*100)}% weekend views)"
-        }
-    
-    return None
+def generate_taste_calendar_card(
+    interest, watch_events: List[Dict], names: Dict[int, str]
+) -> Optional[Dict]:
+    """Each taste world's share of each month, with a seasonality verdict."""
+    if interest is None:
+        return None
 
+    calendar = interest_vectors.by_month(interest, watch_events)
+    if not calendar["months"]:
+        return None
+
+    by_index = {c["index"]: c for c in interest.clusters}
+    worlds = []
+    for world in calendar["worlds"]:
+        cluster = by_index.get(world["index"], {"channels": []})
+        worlds.append({
+            "label": channel_label(cluster["channels"]),
+            "name": names.get(world["index"]),
+            "shares": world["shares"],
+        })
+
+    return {
+        "months": calendar["months"],
+        "worlds": worlds,
+        "seasonal": calendar["seasonal"],
+        "p_value": calendar["p_value"],
+        "coverage": interest.coverage,
+    }
+
+
+def generate_niche_meter_card(interest, facts: Optional[Dict]) -> Optional[Dict]:
+    """How mainstream the viewer's channels are, by subscriber count.
+
+    The only card with an absolute scale -- every other signal here is relative and has
+    no baseline. None without API facts, since Takeout cannot supply subscriber counts.
+    """
+    if interest is None or not facts:
+        return None
+
+    measured = []
+    for channel in interest.cluster_of:
+        subscribers = (facts.get(channel) or {}).get("subscribers")
+        if isinstance(subscribers, int):
+            measured.append((channel, subscribers))
+
+    if not measured:
+        return None
+
+    measured.sort(key=lambda pair: pair[1])
+    counts = [n for _, n in measured]
+    middle = len(counts) // 2
+    median_subscribers = (
+        counts[middle] if len(counts) % 2
+        else (counts[middle - 1] + counts[middle]) // 2
+    )
+
+    return {
+        "median_subscribers": median_subscribers,
+        "obscure_find": {"channel": measured[0][0], "subscribers": measured[0][1]},
+        "biggest": {"channel": measured[-1][0], "subscribers": measured[-1][1]},
+        "bucket_counts": {
+            "under_10k": sum(1 for n in counts if n < 10_000),
+            "10k_1m": sum(1 for n in counts if 10_000 <= n < 1_000_000),
+            "over_1m": sum(1 for n in counts if n >= 1_000_000),
+        },
+        "channels_measured": len(measured),
+    }
