@@ -41,8 +41,6 @@ import {
   PatternsCard,
   RewatchedCard,
   SubscriptionCard,
-  SearchInsightsCard,
-  FirstLastVideoCard,
   OutroCard,
 } from '@/components/wrapped/card-templates';
 
@@ -291,18 +289,6 @@ export default function Home() {
         overlapPercentage={wrappedData.subscriptions.overlap_percentage}
         ghostSubscriptions={wrappedData.subscriptions.ghost}
       />,
-      <SearchInsightsCard
-        key="search"
-        totalSearches={wrappedData.searches.total}
-        topSearch={wrappedData.searches.top_search}
-      />,
-      <FirstLastVideoCard
-        key="first-last"
-        firstVideoTitle={wrappedData.first_last.first_video.title}
-        firstVideoDate={wrappedData.first_last.first_video.date}
-        lastVideoTitle={wrappedData.first_last.last_video.title}
-        lastVideoDate={wrappedData.first_last.last_video.date}
-      />,
       ...(wrappedData.viewing_mode
         ? [
             <ViewingModeCard
@@ -362,31 +348,44 @@ export default function Home() {
   };
 
   // Card count is no longer fixed: taste_worlds, taste_calendar and niche_meter are
-  // omitted when the history cannot support them, so navigation follows the real length
-  // rather than a hardcoded 19.
-  const cardCount = wrappedData ? renderCards().length : 0;
-
+  // omitted when the history cannot support them, so navigation, the counter and the
+  // section bars all follow the real length rather than a hardcoded number.
   const cards = renderCards();
+  const cardCount = cards.length;
 
-  // Section labels
-  const sections = [
-    { name: 'INTRO', startIndex: 0 },
-    { name: 'YOUR YEAR', startIndex: 1 },
-    { name: 'FAVORITES', startIndex: 4 },
-    { name: 'RHYTHM', startIndex: 6 },
-    { name: 'PERSONALITY', startIndex: 9 },
-    { name: 'DEEP DIVES', startIndex: 10 },
-    { name: 'OUTRO', startIndex: 18 },
-  ];
-
-  const getCurrentSection = () => {
-    for (let i = sections.length - 1; i >= 0; i--) {
-      if (currentCard >= sections[i].startIndex) {
-        return sections[i].name;
-      }
-    }
-    return sections[0].name;
+  // Sections are derived from the cards that actually rendered. Hardcoded indices
+  // were what produced "OUTRO / Card 20 of 18" -- gated cards (taste_worlds and
+  // friends) shift every index after them, so any fixed number goes stale.
+  const SECTION_OF: Record<string, string> = {
+    intro: 'INTRO',
+    stats: 'YOUR YEAR', time: 'YOUR YEAR', 'peak-month': 'YOUR YEAR',
+    spotlight: 'FAVORITES', 'top-channels': 'FAVORITES',
+    'watch-cycle': 'RHYTHM', 'day-of-week': 'RHYTHM', streak: 'RHYTHM',
+    personality: 'PERSONALITY',
+    binge: 'DEEP DIVES', 'late-night': 'DEEP DIVES', habits: 'DEEP DIVES',
+    patterns: 'DEEP DIVES', rewatched: 'DEEP DIVES', subscriptions: 'DEEP DIVES',
+    'viewing-mode': 'YOUR SIGNATURE', 'discovery-arc': 'YOUR SIGNATURE',
+    'taste-worlds': 'YOUR SIGNATURE', 'taste-calendar': 'YOUR SIGNATURE',
+    'niche-meter': 'YOUR SIGNATURE',
+    outro: 'OUTRO',
   };
+
+  const sectionForIndex = (index: number) => {
+    const key = String(cards[index]?.key ?? '');
+    return SECTION_OF[key] ?? 'YOUR YEAR';
+  };
+
+  const getCurrentSection = () => sectionForIndex(currentCard);
+
+  // One entry per section that actually has cards, with the index to jump to.
+  const sections = cards.reduce<{ name: string; startIndex: number }[]>(
+    (acc, _card, index) => {
+      const name = sectionForIndex(index);
+      if (acc[acc.length - 1]?.name !== name) acc.push({ name, startIndex: index });
+      return acc;
+    },
+    []
+  );
 
   return (
     <main className="min-h-screen bg-background">
@@ -559,7 +558,7 @@ export default function Home() {
               {getCurrentSection()}
             </span>
             <span className="text-gray-400 text-sm ml-3">
-              Card {currentCard + 1} of 18
+              Card {currentCard + 1} of {cardCount}
             </span>
           </div>
 
@@ -591,7 +590,7 @@ export default function Home() {
           {/* Section bars */}
           <div className="flex gap-1 mt-6">
             {sections.map((section, i) => {
-              const nextSectionStart = sections[i + 1]?.startIndex ?? 18;
+              const nextSectionStart = sections[i + 1]?.startIndex ?? cardCount;
               const isActive = currentCard >= section.startIndex && currentCard < nextSectionStart;
 
               return (
