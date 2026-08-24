@@ -132,3 +132,72 @@ def test_niche_meter_ignores_channels_with_no_subscriber_count():
              for c in interest.cluster_of}
 
     assert generate_niche_meter_card(interest, facts) is None
+
+
+# --- wiring ------------------------------------------------------------------------
+
+def _stats(events):
+    return {
+        "total_events": len(events),
+        "total_watch": len(events),
+        "total_search": 0,
+        "total_subscribe": 0,
+        "language_breakdown": {"english": 0, "hindi": 0, "hinglish": 0, "unknown": 0},
+        "year": 2026,
+    }
+
+
+def test_new_cards_appear_in_a_generated_wrapped():
+    from services.wrapped_service import generate_wrapped_cards
+
+    events = clustered_history()
+    cards = generate_wrapped_cards(events, _stats(events))
+
+    assert "viewing_mode" in cards
+    assert "discovery_arc" in cards
+    assert "taste_worlds" in cards
+    assert "taste_calendar" in cards
+
+
+def test_gated_cards_are_absent_rather_than_null_for_thin_histories():
+    """A short history must not carry taste_worlds: null -- the key is simply gone."""
+    from services.wrapped_service import generate_wrapped_cards
+
+    events = [watch(i * 600, f"chan{i}") for i in range(12)]
+    cards = generate_wrapped_cards(events, _stats(events))
+
+    assert "viewing_mode" in cards
+    assert "taste_worlds" not in cards
+    assert "taste_calendar" not in cards
+    assert "niche_meter" not in cards
+
+
+def test_existing_cards_are_unchanged():
+    from services.wrapped_service import generate_wrapped_cards
+
+    events = clustered_history()
+    cards = generate_wrapped_cards(events, _stats(events))
+
+    assert cards["stats_overview"]["videos_watched"] == len(events)
+    assert cards["intro"]["year"] == 2026
+
+
+def test_enrichment_names_reach_the_taste_cards():
+    from services.wrapped_service import generate_wrapped_cards
+
+    events = clustered_history()
+    top = cluster(events).clusters[0]["index"]
+
+    cards = generate_wrapped_cards(
+        events, _stats(events), enrichment={"names": {top: "Cricket"}, "facts": None}
+    )
+
+    assert cards["taste_worlds"]["worlds"][0]["name"] == "Cricket"
+
+
+def test_generate_wrapped_cards_still_accepts_two_arguments():
+    """Existing callers (demo_service, portability_service, routes) must not break."""
+    from services.wrapped_service import generate_wrapped_cards
+
+    events = clustered_history()
+    assert "error" not in generate_wrapped_cards(events, _stats(events))

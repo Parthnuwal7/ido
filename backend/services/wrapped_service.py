@@ -14,17 +14,22 @@ from typing import List, Dict, Optional, Tuple
 import re
 
 
-def generate_wrapped_cards(events: List[Dict], stats: Dict) -> Dict:
+def generate_wrapped_cards(
+    events: List[Dict], stats: Dict, enrichment: Optional[Dict] = None
+) -> Dict:
     """
     Generate all card data from preprocessed events.
-    
+
     This is the main entry point - processes events and returns
     structured JSON matching the cards in cards_doc.md.
-    
+
     Args:
         events: List of preprocessed event dictionaries
         stats: Stats dictionary from preprocessing
-    
+        enrichment: Optional {"names": {cluster_index: str}, "facts": {channel: {...}}}
+            from the network services. Absent, the taste cards fall back to channel
+            labels and niche_meter is omitted.
+
     Returns:
         Dictionary with all card data
     """
@@ -32,10 +37,17 @@ def generate_wrapped_cards(events: List[Dict], stats: Dict) -> Dict:
     watch_events = [e for e in events if e.get("type") == "watch"]
     search_events = [e for e in events if e.get("type") == "search"]
     subscribe_events = [e for e in events if e.get("type") == "subscribe"]
-    
+
     if not watch_events:
         return {"error": "No watch events found"}
-    
+
+    # Clustering runs once and feeds two cards. `enrichment` carries optional names and
+    # channel facts from the network services; absent, the cards fall back or vanish.
+    enrichment = enrichment or {}
+    names = enrichment.get("names") or {}
+    facts = enrichment.get("facts")
+    interest = interest_vectors.analyse(watch_events)
+
     # Generate each card section
     cards = {
         "intro": generate_intro_card(stats),
@@ -52,6 +64,11 @@ def generate_wrapped_cards(events: List[Dict], stats: Dict) -> Dict:
         "late_night": generate_late_night_card(watch_events),
         "habits": generate_habits_card(watch_events),
         "patterns": generate_patterns_card(watch_events),  # NEW: Association rule patterns
+        "viewing_mode": generate_viewing_mode_card(watch_events),
+        "discovery_arc": generate_discovery_arc_card(watch_events),
+        "taste_worlds": generate_taste_worlds_card(interest, names),
+        "taste_calendar": generate_taste_calendar_card(interest, watch_events, names),
+        "niche_meter": generate_niche_meter_card(interest, facts),
         "rewatched": generate_rewatched_card(watch_events),
         "subscriptions": generate_subscriptions_card(watch_events, subscribe_events),
         "searches": generate_searches_card(search_events),
@@ -63,7 +80,11 @@ def generate_wrapped_cards(events: List[Dict], stats: Dict) -> Dict:
             "total_watch": len(watch_events)
         }
     }
-    
+
+    # A gated card is omitted, never present-but-null: a null would render as an empty
+    # card, which is exactly what the gate exists to prevent.
+    cards = {key: value for key, value in cards.items() if value is not None}
+
     return cards
 
 
