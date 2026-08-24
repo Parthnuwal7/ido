@@ -25,12 +25,30 @@ MAX_CHANNELS_SENT = 5      # enough to characterise a cluster, no more than need
 MAX_NAME_LENGTH = 40
 TIMEOUT = 30
 
+# Topics so broad they describe nearly every channel; they crowd out the useful ones.
+GENERIC_TOPICS = {
+    "Music", "Entertainment", "Lifestyle (sociology)", "Society", "Hobby",
+    "Knowledge", "Film", "Performing arts",
+}
+
+# Ignored when deciding whether two names are really the same.
+FILLER_WORDS = {"and", "the", "of", "a", "an", "your", "music"}
+
 SYSTEM_PROMPT = (
-    "You name groups of YouTube channels. For each numbered group you are given some "
-    "channel names and the topic categories YouTube assigns them. Reply with JSON only: "
-    "an object mapping each group number (as a string) to a short human name of at most "
-    "four words, for example {\"0\": \"IPL Cricket\"}. Use the topics given; do not "
-    "invent facts. No prose, no code fences."
+    "You name groups of YouTube channels. For each numbered group you get the channel "
+    "names, and sometimes the topic categories YouTube assigns them.\n\n"
+    "The channel names are the real signal. YouTube's topic categories are extremely "
+    "coarse -- Bollywood playback singers, K-pop and Western EDM all come back as "
+    "'Pop music, Music, Electronic music' -- so treat them as a weak hint and never "
+    "just echo them back.\n\n"
+    "Name each group for what those specific channels actually are: "
+    "'Bollywood Playback' rather than 'Asian, Pop, Music'; 'IPL Cricket' rather than "
+    "'Sport, Lifestyle'; 'Indian News' rather than 'Entertainment, Society'.\n\n"
+    "Every name must be DISTINCT from the others -- two groups sharing a name, or the "
+    "same words in a different order, makes the list unreadable. If two groups look "
+    "similar, find what separates them.\n\n"
+    "Reply with JSON only: an object mapping each group number (as a string) to a name "
+    "of at most four words, e.g. {\"0\": \"IPL Cricket\"}. No prose, no code fences."
 )
 
 
@@ -40,19 +58,34 @@ def channel_label(channels: List[str]) -> str:
 
 
 def _prompt(clusters: List[Dict], facts: Dict[str, Dict]) -> str:
+    """One line per group: channel names first, topics as a trailing hint.
+
+    Topics are collected per cluster but kept short. Deduplicating them across a
+    whole cluster is what flattened every music world into the same three words,
+    so the channel names lead and the taxonomy only ever supplements them.
+    """
     lines = []
     for cluster in clusters:
         names = cluster["channels"][:MAX_CHANNELS_SENT]
         topics = []
         for name in names:
             for topic in (facts.get(name) or {}).get("topics", []):
-                if topic not in topics:
+                if topic not in topics and topic not in GENERIC_TOPICS:
                     topics.append(topic)
-        line = f"{cluster['index']}: channels = {', '.join(names)}"
+        line = f"{cluster['index']}: {', '.join(names)}"
         if topics:
-            line += f"; topics = {', '.join(topics[:6])}"
+            line += f"  (hint: {', '.join(topics[:4])})"
         lines.append(line)
     return "\n".join(lines)
+
+
+def _normalise(name: str) -> str:
+    """A comparison key that treats reorderings as the same name.
+
+    "Pop, Electronic, Music" and "Electronic, Pop, Music" are not two names.
+    """
+    words = re.findall(r"[a-z]+", name.lower())
+    return " ".join(sorted(w for w in words if w not in FILLER_WORDS))
 
 
 def name_clusters(
@@ -112,11 +145,26 @@ def name_clusters(
 
     names: Dict[int, str] = {}
     valid = {c["index"] for c in clusters}
+    seen: set = set()
+
     for key, value in (raw or {}).items():
         try:
             index = int(key)
         except (TypeError, ValueError):
             continue
-        if index in valid and isinstance(value, str) and value.strip():
-            names[index] = value.strip()[:MAX_NAME_LENGTH]
+        if index not in valid or not isinstance(value, str) or not value.strip():
+            continue
+
+        name = value.strip()[:MAX_NAME_LENGTH]
+        signature = _normalise(name)
+
+        # A repeated name is worse than none: two worlds labelled the same cannot be
+        # told apart, and the channel-label fallback at least stays true. Drop the
+        # collision rather than show it.
+        if not signature or signature in seen:
+            continue
+
+        seen.add(signature)
+        names[index] = name
+
     return names

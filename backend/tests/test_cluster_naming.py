@@ -168,3 +168,54 @@ def test_names_for_unknown_cluster_indexes_are_ignored():
     result = name_clusters(CLUSTERS, FACTS, KEY, consented=True, session=session)
 
     assert result == {0: "Cricket"}
+
+
+# --- name quality ------------------------------------------------------------------
+
+def test_channels_are_presented_before_topics():
+    """The channel names carry the signal; YouTube's topics are coarse.
+
+    Every music cluster comes back from YouTube as "Pop music, Music, Electronic
+    music" whether it is Bollywood playback or Western EDM, so a prompt that leads
+    with topics produces near-identical names for genuinely different worlds.
+    """
+    from services.cluster_naming import _prompt
+
+    text = _prompt(CLUSTERS, FACTS)
+    first_line = text.splitlines()[0]
+
+    assert first_line.index("rajasthanroyals") < first_line.index("Cricket")
+
+
+def test_the_prompt_asks_for_distinct_names():
+    from services.cluster_naming import SYSTEM_PROMPT
+
+    lowered = SYSTEM_PROMPT.lower()
+    assert "distinct" in lowered or "different from each other" in lowered
+
+
+def test_the_prompt_warns_that_topics_are_coarse():
+    """Without this the model treats the taxonomy as authoritative and echoes it."""
+    from services.cluster_naming import SYSTEM_PROMPT
+
+    assert "coarse" in SYSTEM_PROMPT.lower() or "generic" in SYSTEM_PROMPT.lower()
+
+
+def test_duplicate_names_are_rejected():
+    """Two worlds sharing a name is worse than no name -- the card cannot be read."""
+    session = FakeSession(reply('{"0": "Pop Music", "1": "Pop Music"}'))
+
+    result = name_clusters(CLUSTERS, FACTS, KEY, consented=True, session=session)
+
+    assert len(set(result.values())) == len(result), f"duplicate names survived: {result}"
+
+
+def test_near_duplicate_names_are_rejected():
+    """"Pop, Electronic, Music" and "Electronic, Pop, Music" are the same name."""
+    session = FakeSession(
+        reply('{"0": "Pop, Electronic, Music", "1": "Electronic, Pop, Music"}')
+    )
+
+    result = name_clusters(CLUSTERS, FACTS, KEY, consented=True, session=session)
+
+    assert len(result) <= 1, f"a reordering of the same words survived: {result}"
