@@ -444,6 +444,11 @@ export function TasteCalendarCard({ months, worlds, seasonal }: TasteCalendarCar
     const peak = Math.max(...shown.flatMap((w) => w.shares), 0.01);
     const takeaways = calendarTakeaways(months, shown);
 
+    // Cell and label widths follow the month count. A full 12-month year at the old
+    // fixed 88px + 22px/month came to 352px and overflowed the card.
+    const cell = months.length > 9 ? 16 : months.length > 7 ? 19 : 22;
+    const labelWidth = months.length > 9 ? 72 : 84;
+
     const letterFor = (month: string) =>
         MONTH_LETTERS[Math.max(0, parseInt(month.slice(5, 7), 10) - 1)] ?? '';
 
@@ -459,13 +464,17 @@ export function TasteCalendarCard({ months, worlds, seasonal }: TasteCalendarCar
                     {seasonal ? 'Your taste had seasons' : 'Your taste held steady'}
                 </WrappedHeading>
 
-                <div className="w-full overflow-x-auto">
-                    <div className="min-w-fit">
-                        <div className="flex gap-[2px] mb-1 pl-[92px]">
+                <div className="w-full px-3">
+                    <div className="mx-auto w-fit">
+                        <div
+                            className="flex gap-[2px] mb-1"
+                            style={{ paddingLeft: labelWidth + 4 }}
+                        >
                             {months.map((month, i) => (
                                 <div
                                     key={i}
-                                    className="w-5 text-center text-[9px] opacity-60"
+                                    className="text-center text-[9px] opacity-60"
+                                    style={{ width: cell }}
                                 >
                                     {letterFor(month)}
                                 </div>
@@ -495,7 +504,7 @@ export function TasteCalendarCard({ months, worlds, seasonal }: TasteCalendarCar
                     </div>
                 </div>
 
-                <div className="mt-5 space-y-2 w-full">
+                <div className="mt-5 space-y-2 w-full px-2">
                     {takeaways.map((line, i) => (
                         <div
                             key={i}
