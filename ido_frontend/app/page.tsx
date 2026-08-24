@@ -5,6 +5,14 @@ import { ChevronLeft, ChevronRight, Upload, Loader2, Settings, Sparkles } from '
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TimezoneSelector } from '@/components/timezone-selector';
+import { YearSelector } from '@/components/year-selector';
+import { InterestNamingConsent } from '@/components/interest-naming-consent';
+// Google Data Portability ("Connect Google") flow -- SHELVED. The Data Portability API is
+// country-restricted (unavailable for India-based accounts), so the feature is disabled
+// while keeping the code intact. To re-enable, uncomment the imports below and their
+// usages further down.
+// import { GoogleConnect } from '@/components/google-connect';
+// import { SavedWrappeds } from '@/components/saved-wrappeds';
 import { FileUploader } from '@/components/file-uploader';
 import Link from 'next/link';
 
@@ -71,7 +79,12 @@ interface WrappedData {
     first_video: { title: string; date: string };
     last_video: { title: string; date: string };
   };
-  metadata: { generated_at: string; version: string };
+  metadata: {
+    generated_at: string;
+    version: string;
+    year?: number | null;
+    years_available?: number[];
+  };
 }
 
 type AppState = 'upload' | 'processing' | 'cards' | 'error';
@@ -79,6 +92,10 @@ type AppState = 'upload' | 'processing' | 'cards' | 'error';
 export default function Home() {
   const [state, setState] = useState<AppState>('upload');
   const [timezone, setTimezone] = useState('');
+  const [year, setYear] = useState<number>(new Date().getFullYear());
+  const [nameInterests, setNameInterests] = useState(false);
+  const [availableYears, setAvailableYears] = useState<number[] | undefined>();
+  // const [accessToken, setAccessToken] = useState<string | null>(null);  // (Shelved: Google Connect)
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [wrappedData, setWrappedData] = useState<WrappedData | null>(null);
   const [currentCard, setCurrentCard] = useState(0);
@@ -98,6 +115,8 @@ export default function Home() {
       const formData = new FormData();
       formData.append('file', selectedFile);
       formData.append('timezone', timezone);
+      formData.append('year', String(year));
+      formData.append('name_interests', String(nameInterests));
 
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       const response = await fetch(`${apiUrl}/api/wrapped/generate`, {
@@ -111,6 +130,10 @@ export default function Home() {
       }
 
       const data: WrappedData = await response.json();
+      // Once we've seen the export, offer only years that actually have history.
+      if (data.metadata?.years_available?.length) {
+        setAvailableYears(data.metadata.years_available);
+      }
       setWrappedData(data);
       setState('cards');
       setCurrentCard(0);
@@ -339,12 +362,59 @@ export default function Home() {
 
             <Card>
               <CardHeader className="pb-4">
-                <CardTitle className="text-lg">2. Upload Takeout ZIP</CardTitle>
+                <CardTitle className="text-lg">2. Choose Year</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <YearSelector
+                  value={year}
+                  onChange={setYear}
+                  availableYears={availableYears}
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg">3. Upload Takeout ZIP</CardTitle>
               </CardHeader>
               <CardContent>
                 <FileUploader onFileSelect={handleFileSelect} />
+
+                <div className="mt-4 pt-4 border-t">
+                  <InterestNamingConsent
+                    checked={nameInterests}
+                    onChange={setNameInterests}
+                  />
+                </div>
               </CardContent>
             </Card>
+
+            {/* Google Connect + Saved Wrappeds shelved (Data Portability API is
+                country-restricted). Uncomment to re-enable.
+            <SavedWrappeds
+              accessToken={accessToken}
+              onOpen={(cards) => {
+                setWrappedData(cards);
+                setState('cards');
+                setCurrentCard(0);
+              }}
+            />
+
+            <GoogleConnect
+              timezone={timezone}
+              year={year}
+              disabled={!timezone}
+              onToken={setAccessToken}
+              onComplete={(cards) => {
+                if (cards?.metadata?.years_available?.length) {
+                  setAvailableYears(cards.metadata.years_available);
+                }
+                setWrappedData(cards);
+                setState('cards');
+                setCurrentCard(0);
+              }}
+            />
+            */}
 
             {selectedFile && timezone && (
               <Button
