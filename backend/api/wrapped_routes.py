@@ -2,172 +2,130 @@
 Wrapped API Routes
 Stateless endpoint for generating YouTube Wrapped cards.
 
-Uses the same preprocessing as admin analytics for consistency.
+Ingest lives in services.takeout_ingest so it can be tested without FastAPI; this module
+is only HTTP concerns. Note that no HTTPException is raised inside a try block here --
+HTTPException subclasses Exception, so a broad `except Exception` would swallow an
+intended 4xx and re-raise it as a 500.
+
+Handlers here are sync `def` on purpose. ingest_zip and generate_wrapped_cards are
+blocking CPU work measured in seconds; FastAPI runs sync handlers in a threadpool but
+runs `async def` handlers on the event loop, where one upload would freeze every other
+request to the process. Do not convert these to `async def`.
 """
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from fastapi.responses import JSONResponse
+import traceback
 import zipfile
-import json
-import io
+from typing import Optional
 
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
+
+from services import interest_vectors
+from services.demo_service import load_demo_cards
+from services.takeout_ingest import HistoryParseError, build_enrichment, ingest_zip
 from services.wrapped_service import generate_wrapped_cards
-from services.preprocess_service import (
-    preprocess_watch_history,
-    preprocess_search_history,
-    preprocess_subscriptions
-)
 
 wrapped_router = APIRouter(prefix="/api/wrapped", tags=["Wrapped"])
 
+NO_HISTORY_DETAIL = (
+    "No YouTube history found in this ZIP. Make sure you selected YouTube in Google "
+    "Takeout and that the export includes 'history'."
+)
+
+
+def _no_data_for_year(result) -> str:
+    """Name the years that do have data, so the user can pick a usable one."""
+    if not result.years_available:
+        return NO_HISTORY_DETAIL
+
+    years = ", ".join(str(y) for y in result.years_available)
+    return (
+        f"No watch history for {result.year} in this export. "
+        f"Years with data: {years}."
+    )
+
 
 @wrapped_router.post("/generate")
-async def generate_wrapped(
+def generate_wrapped(
     file: UploadFile = File(...),
-    timezone: str = Form(default="UTC")
+    timezone: str = Form(default="UTC"),
+    year: Optional[int] = Form(default=None),
+    name_interests: bool = Form(default=False),
 ):
     """
     Generate YouTube Wrapped cards from a takeout ZIP file.
-    
-    This is a stateless endpoint - no data is stored on the server.
-    Uses the same preprocessing as admin analytics for consistency.
-    
+
+    Stateless - no data is stored on the server. Accepts either the JSON or the HTML
+    export format; Takeout produces HTML by default.
+
     Args:
         file: YouTube takeout ZIP file
-        timezone: User's timezone (e.g., "Asia/Kolkata", "America/New_York")
-    
+        timezone: User's timezone (e.g. "Asia/Kolkata", "America/New_York")
+        year: Calendar year to cover. Defaults to the current year, falling back to
+            the most recent year with watch history.
+        name_interests: User consent to send a few channel names to an LLM for nicer
+            taste-world names. Off by default; without it the worlds are labelled with
+            the user's own channel names.
+
     Returns:
-        JSON with all card data for rendering the wrapped experience
+        JSON with all card data for rendering the wrapped experience.
     """
-    # Validate file type
-    if not file.filename.endswith('.zip'):
+    if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="File must be a ZIP archive")
-    
+
+    # UploadFile already spools large bodies to a temp file. Passing the handle rather
+    # than `await file.read()` keeps a multi-hundred-MB upload off the heap.
     try:
-        # Read ZIP file into memory
-        content = await file.read()
-        
-        # Process in memory using existing preprocess functions
-        events, stats = await process_zip_in_memory(content, timezone)
-        
-        if not events:
-            raise HTTPException(status_code=400, detail="No valid events found in ZIP")
-        
-        # Generate card data
-        cards = generate_wrapped_cards(events, stats)
-        
-        if "error" in cards:
-            raise HTTPException(status_code=400, detail=cards["error"])
-        
-        return JSONResponse(content=cards)
-        
+        result = ingest_zip(file.file, timezone, year=year)
     except zipfile.BadZipFile:
         raise HTTPException(status_code=400, detail="Invalid ZIP file")
-    except Exception as e:
-        print(f"[ERROR] Wrapped generation failed: {e}")
-        import traceback
+    except HistoryParseError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001 - surface unexpected failures as 500
+        print(f"[ERROR] Takeout ingest failed: {exc}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Processing error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Processing error: {exc}")
+
+    if not result.events:
+        raise HTTPException(status_code=400, detail=NO_HISTORY_DETAIL)
+
+    if result.stats["total_watch"] == 0:
+        raise HTTPException(status_code=400, detail=_no_data_for_year(result))
+
+    try:
+        watch_events = [e for e in result.events if e.get("type") == "watch"]
+        interest = interest_vectors.analyse(watch_events)
+        enrichment = build_enrichment(watch_events, interest, name_interests)
+        cards = generate_wrapped_cards(result.events, result.stats, enrichment)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[ERROR] Card generation failed: {exc}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Processing error: {exc}")
+
+    if "error" in cards:
+        raise HTTPException(status_code=400, detail=cards["error"])
+
+    metadata = cards.setdefault("metadata", {})
+    metadata["year"] = result.year
+    metadata["years_available"] = result.years_available
+    if result.report:
+        metadata["parse_report"] = result.report
+
+    return JSONResponse(content=cards)
 
 
-async def process_zip_in_memory(content: bytes, timezone: str) -> tuple:
+@wrapped_router.get("/demo")
+def generate_demo():
+    """Wrapped cards for the seeded demo history.
+
+    Runs the committed fixtures through the same pipeline as a real upload, so the demo
+    always reflects what the code actually produces. Cached after the first request.
     """
-    Process a YouTube takeout ZIP file entirely in memory.
-    Uses the SAME preprocessing functions as admin analytics.
-    
-    Args:
-        content: ZIP file bytes
-        timezone: User timezone string
-    
-    Returns:
-        Tuple of (events list, stats dict)
-    """
-    events = []
-    stats = {
-        "total_events": 0,
-        "total_watch": 0,
-        "total_search": 0,
-        "total_subscribe": 0,
-        "language_breakdown": {"english": 0, "hindi": 0, "hinglish": 0, "unknown": 0}
-    }
-    
-    # Open ZIP from bytes
-    with zipfile.ZipFile(io.BytesIO(content), 'r') as zip_ref:
-        file_list = zip_ref.namelist()
-        
-        print(f"[DEBUG] Found {len(file_list)} files in ZIP")
-        
-        # Find relevant files
-        watch_history_file = None
-        search_history_file = None
-        subscriptions_file = None
-        
-        for f in file_list:
-            basename = f.split('/')[-1].lower()
-            
-            if basename == 'watch-history.json':
-                watch_history_file = f
-                print(f"[DEBUG] Found watch history: {f}")
-            elif basename == 'search-history.json':
-                search_history_file = f
-                print(f"[DEBUG] Found search history: {f}")
-            elif basename == 'subscriptions.csv':
-                subscriptions_file = f
-                print(f"[DEBUG] Found subscriptions: {f}")
-        
-        # Process watch history using existing function
-        if watch_history_file:
-            try:
-                with zip_ref.open(watch_history_file) as f:
-                    content_str = f.read().decode('utf-8')
-                    print(f"[DEBUG] Read {len(content_str)} bytes from watch history")
-                    
-                    # Use the SAME preprocess function as admin
-                    watch_events = preprocess_watch_history(content_str, timezone)
-                    events.extend(watch_events)
-                    stats["total_watch"] = len(watch_events)
-                    print(f"[DEBUG] Processed {len(watch_events)} watch events")
-            except Exception as e:
-                print(f"[ERROR] Processing watch history: {e}")
-                import traceback
-                traceback.print_exc()
-        else:
-            print("[DEBUG] No watch history file found!")
-        
-        # Process search history using existing function
-        if search_history_file:
-            try:
-                with zip_ref.open(search_history_file) as f:
-                    content_str = f.read().decode('utf-8')
-                    
-                    # Use the SAME preprocess function as admin
-                    search_events = preprocess_search_history(content_str, timezone)
-                    events.extend(search_events)
-                    stats["total_search"] = len(search_events)
-                    print(f"[DEBUG] Processed {len(search_events)} search events")
-            except Exception as e:
-                print(f"[ERROR] Processing search history: {e}")
-        
-        # Process subscriptions using existing function
-        if subscriptions_file:
-            try:
-                with zip_ref.open(subscriptions_file) as f:
-                    content_str = f.read().decode('utf-8')
-                    
-                    # Use the SAME preprocess function as admin
-                    sub_events = preprocess_subscriptions(content_str, timezone)
-                    events.extend(sub_events)
-                    stats["total_subscribe"] = len(sub_events)
-                    print(f"[DEBUG] Processed {len(sub_events)} subscription events")
-            except Exception as e:
-                print(f"[ERROR] Processing subscriptions: {e}")
-    
-    # Count language breakdown
-    for e in events:
-        lang = e.get("language_type", "unknown")
-        if lang in stats["language_breakdown"]:
-            stats["language_breakdown"][lang] += 1
-    
-    stats["total_events"] = len(events)
-    
-    return events, stats
+    try:
+        cards = load_demo_cards()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[ERROR] Demo generation failed: {exc}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Demo unavailable: {exc}")
+
+    return JSONResponse(content=cards)
