@@ -18,8 +18,11 @@ from typing import Dict, List, Optional
 RAPID_GAP_MINUTES = 2.0
 # A same-channel run is only a run if the watches are contiguous in one sitting.
 RUN_GAP_MINUTES = 30
-# Above this share of watches inside same-channel runs of 3+, call it bingeing.
-BINGE_RUN_SHARE = 0.15
+# Above this share of watches inside same-channel runs of 3+, the viewer is staying
+# with creators rather than hopping between them.
+LOYAL_RUN_SHARE = 0.15
+# Above this share of rapid-fire watches, the viewer is scrolling rather than watching.
+SCROLLING_SHARE = 0.5
 
 MIN_RUN_LENGTH = 3
 
@@ -42,6 +45,27 @@ def _timeline(watch_events: List[Dict]):
     return out
 
 
+def _style(rapid_share: float, run_share: float) -> str:
+    """A label that accounts for BOTH numbers on the card.
+
+    Pace and loyalty are independent: how fast you move between videos says nothing
+    about whether you stay with one creator. Deriving the label from loyalty alone
+    made two opposite viewers read the same -- one who watched 99% of videos through
+    and one who swiped past 78% were both called a "grazer", directly contradicting
+    the headline percentage sitting beside it.
+
+                        hops between creators   stays with a creator
+      watches fully     explorer                deep_diver
+      scrolls fast      scroller                binge_scroller
+    """
+    scrolling = rapid_share >= SCROLLING_SHARE
+    loyal = run_share >= LOYAL_RUN_SHARE
+
+    if scrolling:
+        return "binge_scroller" if loyal else "scroller"
+    return "deep_diver" if loyal else "explorer"
+
+
 def _empty() -> Dict:
     return {
         "rapid_share": 0.0,
@@ -51,13 +75,13 @@ def _empty() -> Dict:
         "longest_chain_minutes": 0.0,
         "median_gap_minutes": 0.0,
         "run_share": 0.0,
-        "style": "grazer",
+        "style": "explorer",
         "inferred_from_timing": True,
     }
 
 
 def analyse(watch_events: List[Dict]) -> Dict:
-    """Rapid-fire share, longest chain, and grazing-vs-bingeing."""
+    """Rapid-fire share, longest chain, and the viewer style both imply."""
     timeline = _timeline(watch_events)
     total = len(timeline)
     if total == 0:
@@ -117,6 +141,6 @@ def analyse(watch_events: List[Dict]) -> Dict:
         "longest_chain_minutes": round(longest_minutes, 1),
         "median_gap_minutes": round(median(gaps), 1),
         "run_share": round(run_share, 4),
-        "style": "bingeing" if run_share >= BINGE_RUN_SHARE else "grazer",
+        "style": _style(rapid_watches / total, run_share),
         "inferred_from_timing": True,
     }

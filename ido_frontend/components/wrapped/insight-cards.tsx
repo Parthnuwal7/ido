@@ -41,10 +41,34 @@ interface ViewingModeCardProps {
     style: string;
 }
 
+/** Wording for each viewer style, keyed to what the numbers above it say. */
+const STYLE_COPY: Record<string, { badge: string; note: string }> = {
+    explorer: {
+        badge: 'The Explorer',
+        note: 'You watch things through, and range widely',
+    },
+    deep_diver: {
+        badge: 'The Deep Diver',
+        note: 'You watch things through, and stay with a creator',
+    },
+    scroller: {
+        badge: 'The Scroller',
+        note: 'You move fast, and rarely twice through the same creator',
+    },
+    binge_scroller: {
+        badge: 'The Binge Scroller',
+        note: 'You move fast, but in long runs on one creator',
+    },
+};
+
 /**
  * A single ratio against a whole, so this is a meter rather than a chart -- a
  * one-bar bar chart would be noise. The footnote is not decoration: Takeout never
  * labels Shorts, so this is a deduction from timing and the card has to say so.
+ *
+ * The style badge reads from both numbers shown here, not just one: labelling on
+ * channel loyalty alone made a viewer who watched 99% of videos through and one who
+ * swiped past 78% both read the same, contradicting the headline percentage.
  */
 export function ViewingModeCard({
     rapidShare,
@@ -68,7 +92,7 @@ export function ViewingModeCard({
                     of your watching was rapid-fire
                 </WrappedSubtitle>
 
-                <div className="w-full max-w-xs mb-6">
+                <div className="w-full max-w-xs mb-6 self-center">
                     <div className="flex h-4 rounded-full overflow-hidden bg-white/20">
                         <div className="bg-white" style={{ width: `${pct}%` }} />
                     </div>
@@ -78,7 +102,7 @@ export function ViewingModeCard({
                     </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 w-full max-w-xs text-center">
+                <div className="grid grid-cols-2 gap-3 w-full max-w-xs text-center self-center">
                     <div className="p-3 bg-white/10 rounded-xl">
                         <div className="text-2xl font-bold">{longestChain}</div>
                         <div className="text-xs opacity-80">in a row</div>
@@ -91,9 +115,13 @@ export function ViewingModeCard({
                     </div>
                 </div>
 
-                <WrappedBadge className="mt-4">
-                    {style === 'bingeing' ? 'You settle in' : 'You graze'}
+                <WrappedBadge className="mt-5 self-center">
+                    {(STYLE_COPY[style] ?? STYLE_COPY.explorer).badge}
                 </WrappedBadge>
+
+                <p className="text-xs opacity-80 text-center mt-2 px-4">
+                    {(STYLE_COPY[style] ?? STYLE_COPY.explorer).note}
+                </p>
             </WrappedCardContent>
 
             <WrappedCardFooter>
@@ -440,14 +468,21 @@ const MONTH_LETTERS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D
  * is nothing for a colourblind reader to disambiguate by hue.
  */
 export function TasteCalendarCard({ months, worlds, seasonal }: TasteCalendarCardProps) {
-    const shown = worlds.slice(0, 8);
+    const shown = worlds.slice(0, 6);
     const peak = Math.max(...shown.flatMap((w) => w.shares), 0.01);
     const takeaways = calendarTakeaways(months, shown);
 
-    // Cell and label widths follow the month count. A full 12-month year at the old
-    // fixed 88px + 22px/month came to 352px and overflowed the card.
-    const cell = months.length > 9 ? 16 : months.length > 7 ? 19 : 22;
-    const labelWidth = months.length > 9 ? 72 : 84;
+    // The row label sits ABOVE its row rather than beside it, so the cells get the
+    // whole content box (360px card less p-8 = 296px) instead of sharing it with a
+    // 70px label column. At twelve months that is 22px per cell instead of 14px, and
+    // the labels stop truncating. The card had ample unused height to pay for it.
+    const GRID_WIDTH = 292;
+    const GAP = 2;
+    const cellWidth = Math.floor(
+        (GRID_WIDTH - (months.length - 1) * GAP) / Math.max(months.length, 1)
+    );
+    // Cells are not square: height stays modest so eight worlds still fit vertically.
+    const cellHeight = Math.min(cellWidth, 20);
 
     const letterFor = (month: string) =>
         MONTH_LETTERS[Math.max(0, parseInt(month.slice(5, 7), 10) - 1)] ?? '';
@@ -464,17 +499,14 @@ export function TasteCalendarCard({ months, worlds, seasonal }: TasteCalendarCar
                     {seasonal ? 'Your taste had seasons' : 'Your taste held steady'}
                 </WrappedHeading>
 
-                <div className="w-full px-3">
-                    <div className="mx-auto w-fit">
-                        <div
-                            className="flex gap-[2px] mb-1"
-                            style={{ paddingLeft: labelWidth + 4 }}
-                        >
+                <div className="w-full">
+                    <div className="mx-auto" style={{ width: GRID_WIDTH }}>
+                        <div className="flex mb-1" style={{ gap: GAP }}>
                             {months.map((month, i) => (
                                 <div
                                     key={i}
-                                    className="text-center text-[9px] opacity-60"
-                                    style={{ width: cell }}
+                                    className="text-center text-[9px] opacity-50"
+                                    style={{ width: cellWidth }}
                                 >
                                     {letterFor(month)}
                                 </div>
@@ -577,7 +609,7 @@ export function NicheMeterCard({
                     subscribers on your median channel
                 </WrappedSubtitle>
 
-                <div className="w-full max-w-xs mb-2">
+                <div className="w-full max-w-xs mb-2 self-center">
                     <div className="flex h-4 rounded-full overflow-hidden gap-[2px]">
                         {buckets.map((bucket, i) => (
                             <div
@@ -599,7 +631,7 @@ export function NicheMeterCard({
                     </div>
                 </div>
 
-                <div className="mt-5 p-3 bg-white/10 rounded-xl w-full max-w-xs text-center">
+                <div className="mt-5 p-3 bg-white/10 rounded-xl w-full max-w-xs text-center self-center">
                     <div className="text-[10px] uppercase tracking-wide opacity-70 mb-1">
                         Your deepest cut
                     </div>

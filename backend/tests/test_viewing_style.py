@@ -63,20 +63,20 @@ def test_median_gap_is_reported():
     assert analyse(spaced(11, 4))["median_gap_minutes"] == 4.0
 
 
-def test_staying_on_one_channel_reads_as_bingeing():
+def test_staying_on_one_channel_shows_a_high_run_share():
     result = analyse(spaced(20, 5, channel="same"))
 
     assert result["run_share"] > 0.9
-    assert result["style"] == "bingeing"
+    assert result["style"] == "deep_diver"
 
 
-def test_hopping_between_channels_reads_as_grazing():
+def test_hopping_between_channels_shows_no_run_share():
     events = [watch(i * 5, channel=f"chan{i}") for i in range(20)]
 
     result = analyse(events)
 
     assert result["run_share"] == 0.0
-    assert result["style"] == "grazer"
+    assert result["style"] == "explorer"
 
 
 def test_result_declares_that_rapid_fire_is_inferred():
@@ -95,3 +95,59 @@ def test_events_without_timestamps_are_ignored():
     result = analyse(spaced(5, 1) + [{"type": "watch", "channel_clean": "x"}])
 
     assert result["rapid_watches"] + result["considered_watches"] == 5
+
+
+# --- the style label must agree with the numbers beside it -------------------------
+
+def one_channel(count, minutes_apart):
+    return spaced(count, minutes_apart, channel="same")
+
+
+def many_channels(count, minutes_apart):
+    return [watch(i * minutes_apart, channel=f"chan{i}") for i in range(count)]
+
+
+def test_watching_fully_and_widely_is_not_called_the_same_as_swiping():
+    """The regression: the badge was derived from run_share alone, so a viewer who
+    watched 99% of videos through and one who swiped past 78% both read "grazer"."""
+    deliberate = analyse(many_channels(40, 8))
+    swiper = analyse(many_channels(40, 1))
+
+    assert deliberate["style"] != swiper["style"]
+
+
+def test_slow_pace_and_many_channels_reads_as_exploring():
+    result = analyse(many_channels(40, 8))
+
+    assert result["rapid_share"] == 0.0
+    assert result["style"] == "explorer"
+
+
+def test_slow_pace_on_one_channel_reads_as_settling_in():
+    result = analyse(one_channel(40, 8))
+
+    assert result["style"] == "deep_diver"
+
+
+def test_fast_pace_across_channels_reads_as_scrolling():
+    result = analyse(many_channels(40, 1))
+
+    assert result["rapid_share"] > 0.9
+    assert result["style"] == "scroller"
+
+
+def test_fast_pace_on_one_channel_reads_as_binge_scrolling():
+    result = analyse(one_channel(40, 1))
+
+    assert result["style"] == "binge_scroller"
+
+
+def test_style_never_contradicts_the_headline_number():
+    """A style containing "scroll" must only appear with a high rapid share."""
+    for events in (many_channels(40, 8), one_channel(40, 8),
+                   many_channels(40, 1), one_channel(40, 1)):
+        result = analyse(events)
+        if "scroll" in result["style"]:
+            assert result["rapid_share"] >= 0.5, result
+        else:
+            assert result["rapid_share"] < 0.5, result
