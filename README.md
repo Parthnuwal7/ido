@@ -25,14 +25,14 @@
 ---
 ## Motivation
 
-I was pretty disappointed with this year's YouTube Wrapped feature and felt that their insights were not enough. I thought it would be fun to create something similar but with more insights and a better design. So, I took inspiration from Spotify Wrapped and created Ido. A platform where you can explore your YouTube journey and get beautiful, shareable insights about your watching habits. It's privacy-first and doesn't store any of your data on our servers. Please free to check it out at [Ido](https://ido-by-parth.vercel.app).
+I was pretty disappointed with this year's YouTube Wrapped feature and felt that their insights were not enough. I thought it would be fun to create something similar but with more insights and a better design. So, I took inspiration from Spotify Wrapped and created Ido. A platform where you can explore your YouTube journey and get beautiful, shareable insights about your watching habits. It's privacy-first: your Takeout data is processed and discarded, never retained. Please free to check it out at [Ido](https://ido-by-parth.vercel.app).
 
 Also please feel free to contribute to this project. I'm always looking for new ideas and features to add. Please free to open an issue or submit a pull request. If you like what I'm doing, please consider giving it a star on GitHub. I'm working on adding Topic modelling based insights and more. Stay updated!
 
 ## Features
 
 - **19 Insight Cards**: Beautiful, Spotify Wrapped-style cards showing your YouTube journey
-- **Privacy First**: All processing happens in-memory — your data is never stored on our servers
+- **Privacy First**: Your Takeout data is processed in memory and discarded — only the generated insight cards are saved, and only if you sign in
 - **Pattern Discovery**: Association rule mining reveals hidden viewing patterns
 - **Watch Cycle Visualization**: Polar chart showing your 24-hour activity
 - **Habit Detection**: Find channels you watch regularly
@@ -136,9 +136,32 @@ ido/
 
 ## 🔒 Privacy
 
-- **No data storage**: Your YouTube data is processed in-memory and immediately discarded
+- **Your Takeout data is never retained**: uploads and Data Portability exports are
+  processed in memory (or a temp file that is deleted immediately) and discarded
+- **No OAuth tokens are stored**: if you connect Google, the token stays in your browser
+  and is used per request
+- **AI naming is opt-in and off by default**: ticking "Name my taste worlds" sends up to
+  five channel names per taste world, plus the topic categories YouTube assigns them, to
+  OpenRouter. Your watch history, timestamps, video titles and identity are never sent.
+  Leave it unticked and your taste worlds are labelled with your own channel names.
+- **Channel lookups**: if a YouTube Data API key is configured, we look up public channel
+  facts (topics, subscriber counts) by channel ID. This sends channel IDs to Google, who
+  already have them, and nothing about you.
+- **Saved Wrappeds are opt-in**: signing in stores only the generated cards (~3 KB) so
+  you can revisit past years. Delete them any time from the home screen, or via
+  `DELETE /api/me/data`
 - **No tracking**: We don't use analytics or tracking
 - **Open source**: Audit the code yourself
+
+### Two ways to get your data in
+
+| | Effort | Wait |
+|---|---|---|
+| **Upload a Takeout ZIP** | Export from Takeout yourself, then upload (can be ~600 MB) | Minutes to upload |
+| **Connect Google** | One consent screen | Google builds the export: minutes to ~1 hour |
+
+Tip for the upload path: in Google Takeout, deselect **videos** under YouTube. They are
+usually most of the archive size and are never read.
 
 ## 🤝 Contributing
 
