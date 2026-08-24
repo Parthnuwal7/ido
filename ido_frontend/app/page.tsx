@@ -7,6 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TimezoneSelector } from '@/components/timezone-selector';
 import { YearSelector } from '@/components/year-selector';
 import { InterestNamingConsent } from '@/components/interest-naming-consent';
+import {
+  ViewingModeCard,
+  DiscoveryArcCard,
+  TasteWorldsCard,
+  TasteCalendarCard,
+  NicheMeterCard,
+} from '@/components/wrapped/insight-cards';
 // Google Data Portability ("Connect Google") flow -- SHELVED. The Data Portability API is
 // country-restricted (unavailable for India-based accounts), so the feature is disabled
 // while keeping the code intact. To re-enable, uncomment the imports below and their
@@ -78,6 +85,35 @@ interface WrappedData {
   first_last: {
     first_video: { title: string; date: string };
     last_video: { title: string; date: string };
+  };
+  viewing_mode?: {
+    rapid_share: number;
+    rapid_watches: number;
+    considered_watches: number;
+    longest_chain: number;
+    longest_chain_minutes: number;
+    style: string;
+  };
+  discovery_arc?: {
+    months: { month: string; novelty_rate: number; top10_share: number }[];
+    novelty_start: number | null;
+    novelty_end: number | null;
+    summary: string;
+  };
+  taste_worlds?: {
+    worlds: { label: string; name: string | null; channels: string[]; share: number; watches: number }[];
+    coverage: number;
+  };
+  taste_calendar?: {
+    months: string[];
+    worlds: { label: string; name: string | null; shares: number[] }[];
+    seasonal: boolean;
+  };
+  niche_meter?: {
+    median_subscribers: number;
+    obscure_find: { channel: string; subscribers: number };
+    bucket_counts: { under_10k: number; '10k_1m': number; over_1m: number };
+    channels_measured: number;
   };
   metadata: {
     generated_at: string;
@@ -152,14 +188,14 @@ export default function Home() {
   };
 
   const goNext = () => {
-    if (wrappedData) {
-      setCurrentCard((c) => (c + 1) % 19);
+    if (cardCount) {
+      setCurrentCard((c) => (c + 1) % cardCount);
     }
   };
 
   const goPrev = () => {
-    if (wrappedData) {
-      setCurrentCard((c) => (c - 1 + 19) % 19);
+    if (cardCount) {
+      setCurrentCard((c) => (c - 1 + cardCount) % cardCount);
     }
   };
 
@@ -267,9 +303,68 @@ export default function Home() {
         lastVideoTitle={wrappedData.first_last.last_video.title}
         lastVideoDate={wrappedData.first_last.last_video.date}
       />,
+      ...(wrappedData.viewing_mode
+        ? [
+            <ViewingModeCard
+              key="viewing-mode"
+              rapidShare={wrappedData.viewing_mode.rapid_share}
+              rapidWatches={wrappedData.viewing_mode.rapid_watches}
+              consideredWatches={wrappedData.viewing_mode.considered_watches}
+              longestChain={wrappedData.viewing_mode.longest_chain}
+              longestChainMinutes={wrappedData.viewing_mode.longest_chain_minutes}
+              style={wrappedData.viewing_mode.style}
+            />,
+          ]
+        : []),
+      ...(wrappedData.discovery_arc
+        ? [
+            <DiscoveryArcCard
+              key="discovery-arc"
+              months={wrappedData.discovery_arc.months}
+              noveltyStart={wrappedData.discovery_arc.novelty_start}
+              noveltyEnd={wrappedData.discovery_arc.novelty_end}
+              summary={wrappedData.discovery_arc.summary}
+            />,
+          ]
+        : []),
+      ...(wrappedData.taste_worlds
+        ? [
+            <TasteWorldsCard
+              key="taste-worlds"
+              worlds={wrappedData.taste_worlds.worlds}
+              coverage={wrappedData.taste_worlds.coverage}
+            />,
+          ]
+        : []),
+      ...(wrappedData.taste_calendar
+        ? [
+            <TasteCalendarCard
+              key="taste-calendar"
+              months={wrappedData.taste_calendar.months}
+              worlds={wrappedData.taste_calendar.worlds}
+              seasonal={wrappedData.taste_calendar.seasonal}
+            />,
+          ]
+        : []),
+      ...(wrappedData.niche_meter
+        ? [
+            <NicheMeterCard
+              key="niche-meter"
+              medianSubscribers={wrappedData.niche_meter.median_subscribers}
+              obscureFind={wrappedData.niche_meter.obscure_find}
+              bucketCounts={wrappedData.niche_meter.bucket_counts}
+              channelsMeasured={wrappedData.niche_meter.channels_measured}
+            />,
+          ]
+        : []),
       <OutroCard key="outro" year={wrappedData.intro.year} />,
     ];
   };
+
+  // Card count is no longer fixed: taste_worlds, taste_calendar and niche_meter are
+  // omitted when the history cannot support them, so navigation follows the real length
+  // rather than a hardcoded 19.
+  const cardCount = wrappedData ? renderCards().length : 0;
 
   const cards = renderCards();
 
