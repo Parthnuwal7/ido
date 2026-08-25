@@ -5,182 +5,142 @@
 <h1 align="center">Ido</h1>
 
 <p align="center">
-  <strong>Your YouTube Wrapped — Discover your year in videos</strong>
+  <strong>Your YouTube Wrapped — see your year in videos</strong>
 </p>
 
 <p align="center">
-  Upload your YouTube Takeout data and get beautiful, shareable insights about your watching habits.
+  Upload your YouTube data and get a set of shareable cards about how you watched this year.
 </p>
 
 <p align="center">
-  <a href="#motivation">Motivation</a> •
-  <a href="#features">Features</a> •
-  <a href="#demo">Demo</a> •
-  <a href="#installation">Installation</a> •
-  <a href="#usage">Usage</a> •
-  <a href="#tech-stack">Tech Stack</a> •
+  <a href="#what-it-does">What it does</a> •
+  <a href="#try-it">Try it</a> •
+  <a href="#how-to-use-it">How to use it</a> •
+  <a href="#your-privacy">Privacy</a> •
+  <a href="#run-it-yourself">Run it yourself</a> •
   <a href="#contributing">Contributing</a>
 </p>
 
 ---
-## Motivation
 
-I was pretty disappointed with this year's YouTube Wrapped feature and felt that their insights were not enough. I thought it would be fun to create something similar but with more insights and a better design. So, I took inspiration from Spotify Wrapped and created Ido. A platform where you can explore your YouTube journey and get beautiful, shareable insights about your watching habits. It's privacy-first: your Takeout data is processed and discarded, never retained. Please free to check it out at [Ido](https://ido-by-parth.vercel.app).
+## Why I built this
 
-Also please feel free to contribute to this project. I'm always looking for new ideas and features to add. Please free to open an issue or submit a pull request. If you like what I'm doing, please consider giving it a star on GitHub. I'm working on adding Topic modelling based insights and more. Stay updated!
+YouTube's own Recap felt thin to me — a few numbers and not much else. I wanted to see
+what my viewing actually looked like over a year, so I built Ido. Drop in the data
+Google already has on you and get 22 cards back in a few seconds.
 
-## Features
+If you like it, a star on GitHub is appreciated.
 
-- **19 Insight Cards**: Beautiful, Spotify Wrapped-style cards showing your YouTube journey
-- **Privacy First**: Your Takeout data is processed in memory and discarded — only the generated insight cards are saved, and only if you sign in
-- **Pattern Discovery**: Association rule mining reveals hidden viewing patterns
-- **Watch Cycle Visualization**: Polar chart showing your 24-hour activity
-- **Habit Detection**: Find channels you watch regularly
-- **Binge Tracking**: Discover your longest watching sessions
-- **Late Night Stats**: See your after-midnight viewing habits
-- **Search Insights**: What you searched for most
-- **Subscription Analysis**: Ghost subscriptions exposed
+## What it does
 
-## 🎯 Demo
+**Your year, counted**
+- How many videos you watched, how many channels, and how many days you showed up
+- Roughly how many hours it added up to
+- Your busiest month, and your first and last video of the year
 
-Try the demo with sample data: [Live Demo]([(https://ido-by-parth.vercel.app/wrapped-demo))
+**Your favourites**
+- The channels you watched most
+- The videos you came back to more than once
+- Channels you subscribed to but never actually watched
 
-### Cards Preview
+**Your rhythm**
+- What time of day you watch, as a 24-hour clock
+- Your busiest day of the week
+- Your longest run of days without missing one
+- How much you watch after midnight, and how late you stayed up
 
-| Intro | Stats | Top Channels |
-|-------|-------|--------------|
-| Personalized welcome | Videos watched, channels explored | Your most-watched creators |
+**Your habits**
+- Whether you scroll quickly or settle in and watch things properly
+- Your longest unbroken viewing session
+- Channels you return to like clockwork
+- Patterns you probably haven't noticed — like a channel you only ever watch on Sundays
 
-| Watch Cycle | Patterns | Habits |
-|-------------|----------|--------|
-| 24-hour polar chart | AI-discovered insights | Regular viewing habits |
+**Your taste**
+- Your viewing sorted into a handful of "worlds" — Ido works these out from which
+  channels you watch in the same sitting, so it finds them without being told
+- How those worlds rose and fell across the months
+- Whether you drifted towards new channels or settled into familiar ones
+- How mainstream or obscure your channels are
 
-## 🚀 Installation
+## Try it
 
-### Prerequisites
+[**Open the demo**](https://ido-by-parth.vercel.app/wrapped-demo) — it runs on sample
+data, so you can see all the cards without uploading anything.
 
-- Node.js 18+
-- Python 3.11+
-- pnpm (recommended) or npm
+## How to use it
 
-### Frontend Setup
+1. Go to [Google Takeout](https://takeout.google.com/) and select **YouTube only**
+2. Under YouTube, untick **videos** — those are your own uploads, they can be hundreds
+   of megabytes, and Ido never looks at them
+3. Download the ZIP when Google emails you
+4. Open [Ido](https://ido-by-parth.vercel.app), pick your timezone and a year, and drop
+   the ZIP in
+5. Swipe through your cards
+
+It takes a few seconds once the file is uploaded. Both formats Google offers work — you
+don't need to change any export settings.
+
+## Your privacy
+
+- **Your Takeout file is never kept.** It's read, turned into cards, and thrown away.
+- **Nothing is stored about you** unless you choose to save a Wrapped.
+- **Naming your taste worlds is optional.** If you tick that box, a few channel names go
+  to an AI service to turn "rajasthanroyals · cricinfo" into "IPL Cricket". Your watch
+  history never leaves. Leave it unticked and Ido uses your channel names instead.
+- **No tracking.** No analytics, no ads.
+- **Open source**, so you can check all of this yourself.
+
+## Run it yourself
+
+You'll need Node.js 18+, Python 3.11+, and pnpm.
+
+**Frontend**
 
 ```bash
 cd ido_frontend
 pnpm install
 cp env.example .env.local
-# Edit .env.local with your settings
 pnpm dev
 ```
 
-### Backend Setup
+**Backend**
 
 ```bash
 cd backend
 python -m venv venv
-venv\Scripts\activate  # Windows
-# source venv/bin/activate  # Mac/Linux
+venv\Scripts\activate          # Windows
+# source venv/bin/activate     # Mac/Linux
 pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 uvicorn main:app --reload --port 8000
 ```
 
-## 📖 Usage
+Copy `backend/env.example` to `backend/.env` if you want the optional extras (naming
+your taste worlds, and channel details). Everything else works without any keys.
 
-1. **Get your YouTube data**: Go to [Google Takeout](https://takeout.google.com/), select only YouTube, and download the ZIP
-2. **Upload**: Drop the ZIP file on the Ido homepage
-3. **Select timezone**: Choose your local timezone for accurate insights
-4. **Explore**: Swipe through your personalized Wrapped cards!
+## Built with
 
-### API Endpoints
+Next.js and Tailwind on the front, FastAPI on the back, deployed on Vercel and Hugging
+Face Spaces.
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/wrapped/generate` | POST | Generate wrapped cards from ZIP |
-| `/api/health` | GET | Health check |
+## Contributing
 
-## 🛠️ Tech Stack
-
-### Frontend
-- **Next.js 15** — React framework
-- **Tailwind CSS** — Styling
-- **shadcn/ui** — UI components
-- **Lucide** — Icons
-
-### Backend
-- **FastAPI** — Python web framework
-- **spaCy** — NLP for language detection
-- **pytz** — Timezone handling
-
-### Deployment
-- **Frontend**: Vercel / Netlify
-- **Backend**: Hugging Face Spaces (Docker)
-
-## 📁 Project Structure
-
-```
-ido/
-├── ido_frontend/          # Next.js frontend
-│   ├── app/               # App router pages
-│   ├── components/        # React components
-│   │   └── wrapped/       # Wrapped card components
-│   └── lib/               # Utilities
-├── backend/               # FastAPI backend
-│   ├── api/               # Route handlers
-│   ├── services/          # Business logic
-│   │   ├── wrapped_service.py    # Card generation
-│   │   └── preprocess_service.py # Data processing
-│   └── Dockerfile         # HF Spaces deployment
-└── docs/                  # Documentation
-```
-
-## 🔒 Privacy
-
-- **Your Takeout data is never retained**: uploads and Data Portability exports are
-  processed in memory (or a temp file that is deleted immediately) and discarded
-- **No OAuth tokens are stored**: if you connect Google, the token stays in your browser
-  and is used per request
-- **AI naming is opt-in and off by default**: ticking "Name my taste worlds" sends up to
-  five channel names per taste world, plus the topic categories YouTube assigns them, to
-  OpenRouter. Your watch history, timestamps, video titles and identity are never sent.
-  Leave it unticked and your taste worlds are labelled with your own channel names.
-- **Channel lookups**: if a YouTube Data API key is configured, we look up public channel
-  facts (topics, subscriber counts) by channel ID. This sends channel IDs to Google, who
-  already have them, and nothing about you.
-- **Saved Wrappeds are opt-in**: signing in stores only the generated cards (~3 KB) so
-  you can revisit past years. Delete them any time from the home screen, or via
-  `DELETE /api/me/data`
-- **No tracking**: We don't use analytics or tracking
-- **Open source**: Audit the code yourself
-
-### Two ways to get your data in
-
-| | Effort | Wait |
-|---|---|---|
-| **Upload a Takeout ZIP** | Export from Takeout yourself, then upload (can be ~600 MB) | Minutes to upload |
-| **Connect Google** | One consent screen | Google builds the export: minutes to ~1 hour |
-
-Tip for the upload path: in Google Takeout, deselect **videos** under YouTube. They are
-usually most of the archive size and are never read.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome — open an issue or send a pull request.
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+2. Create your branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes
+4. Push and open a pull request
 
-## 📧 Contact
+## Contact
 
 - **Email**: parthnuwal7@gmail.com
 - **GitHub**: [@Parthnuwal7](https://github.com/Parthnuwal7)
 
-## 📄 License
+## License
 
-This project is licensed under the Dual use License (Free for personal use, commercial use requires permission) - see the [LICENSE](LICENSE) file for details.
+Dual use licence — free for personal use, commercial use needs permission. See
+[LICENSE](LICENSE).
 
 ---
 
