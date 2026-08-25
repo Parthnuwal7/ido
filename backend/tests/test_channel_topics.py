@@ -137,3 +137,65 @@ def test_an_empty_id_list_makes_no_request():
 
     assert fetch([], KEY, session=session) == {}
     assert session.calls == []
+
+
+# --- concurrency -------------------------------------------------------------------
+
+def test_batches_are_fetched_concurrently():
+    """Six sequential round-trips at ~0.66s each cost 4s; concurrently they cost one.
+
+    Asserted by timing rather than by inspection: a sleeping fake session makes the
+    difference unambiguous without depending on how concurrency is implemented.
+    """
+    import time
+
+    class SlowSession:
+        def get(self, url, **kwargs):
+            time.sleep(0.2)
+            return FakeResponse({"items": []})
+
+    ids = [f"UC_{i}" for i in range(250)]      # 5 batches of 50
+
+    start = time.perf_counter()
+    fetch(ids, KEY, session=SlowSession())
+    elapsed = time.perf_counter() - start
+
+    assert elapsed < 0.6, (
+        f"5 batches took {elapsed:.2f}s; sequential would be ~1.0s, so these ran serially"
+    )
+
+
+def test_results_from_all_batches_are_merged():
+    """Concurrency must not drop or duplicate a batch."""
+    class PerBatchSession:
+        def __init__(self):
+            self.seen = 0
+
+        def get(self, url, **kwargs):
+            requested = kwargs["params"]["id"].split(",")
+            return FakeResponse({
+                "items": [item(cid, f"Chan {cid}") for cid in requested]
+            })
+
+    ids = [f"UC_{i}" for i in range(120)]
+
+    facts = fetch(ids, KEY, session=PerBatchSession())
+
+    assert len(facts) == 120
+    assert facts["UC_0"]["title"] == "Chan UC_0"
+    assert facts["UC_119"]["title"] == "Chan UC_119"
+
+
+def test_one_failing_batch_still_returns_none():
+    """A partial result would silently under-report; keep the all-or-nothing contract."""
+    class FlakySession:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, url, **kwargs):
+            self.calls += 1
+            if self.calls == 2:
+                return FakeResponse({"error": {"message": "quota"}}, status=403)
+            return FakeResponse({"items": []})
+
+    assert fetch([f"UC_{i}" for i in range(150)], KEY, session=FlakySession()) is None

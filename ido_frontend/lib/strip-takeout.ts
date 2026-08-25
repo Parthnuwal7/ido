@@ -38,6 +38,75 @@ const WANTED = new Set([
 /** Below this, trimming is not worth the wait -- just send the original. */
 const WORTH_TRIMMING_BYTES = 20 * 1024 * 1024;
 
+/** Takeout's HTML history is a flat run of these; each one is a single activity. */
+const CELL_MARKER = '<div class="outer-cell';
+
+/** The date line inside a cell, e.g. "Aug 21, 2026,". */
+const CELL_DATE = /([A-Z][a-z]{2}) \d{1,2}, ((?:19|20)\d{2}),/;
+
+/**
+ * Drop history cells that do not belong to the chosen year.
+ *
+ * The backend already filters by year, but only after scanning and timestamp-mapping
+ * every cell in the file -- about 1.7s of work on a 42,500-entry export that is then
+ * thrown away. The date is plain text inside each cell, so the browser can cut them
+ * with string operations alone: no HTML parsing, no date parsing.
+ *
+ * The boundary rule matters. Timestamps are wall-clock in the exporter's timezone and
+ * the backend re-bins them in the viewer's, which can move a watch across midnight --
+ * so December of the previous year and January of the next are kept. An earlier version
+ * kept the whole neighbouring years, which sounds safer but removed nothing at all from
+ * a two-year export: the margin has to be a few hours wide, not twelve months.
+ *
+ * Conservative everywhere else: an undated cell is kept, an unfamiliar layout is left
+ * alone, and if filtering would empty the file the original is returned. Losing history
+ * silently is far worse than being slow.
+ */
+function filterHtmlToYear(html: string, year: number): string {
+    const first = html.indexOf(CELL_MARKER);
+    if (first === -1) return html;              // not the layout we expect
+
+    const head = html.slice(0, first);
+    const parts = html.slice(first).split(CELL_MARKER);
+    const kept: string[] = [];
+    let tail = '';
+
+    for (let i = 1; i < parts.length; i++) {
+        const cell = CELL_MARKER + parts[i];
+        let content = cell;
+
+        // The final cell carries the document's closing tags; keep them regardless.
+        if (i === parts.length - 1) {
+            const close = cell.lastIndexOf('</div></div>');
+            if (close !== -1) {
+                tail = cell.slice(close + '</div></div>'.length);
+                content = cell.slice(0, close + '</div></div>'.length);
+            }
+        }
+
+        const match = content.match(CELL_DATE);
+        if (!match) {
+            kept.push(content);                 // undated: the backend decides
+            continue;
+        }
+
+        const month = match[1];
+        const cellYear = Number(match[2]);
+        if (
+            cellYear === year ||
+            (cellYear === year - 1 && month === 'Dec') ||
+            (cellYear === year + 1 && month === 'Jan')
+        ) {
+            kept.push(content);
+        }
+    }
+
+    // Filtering everything means the year guess was wrong for this file -- send it whole
+    // so the backend can report which years the export actually contains.
+    if (kept.length === 0) return html;
+    return head + kept.join('') + tail;
+}
+
 export interface StripResult {
     file: File;
     /** True when a smaller archive was actually built. */
@@ -57,7 +126,8 @@ const isWantedFile = (entry: Entry): entry is FileEntry =>
 
 export async function stripTakeout(
     file: File,
-    onProgress?: (message: string) => void
+    onProgress?: (message: string) => void,
+    year?: number
 ): Promise<StripResult> {
     const originalBytes = file.size;
     const unchanged = (reason: string): StripResult => ({
@@ -92,8 +162,17 @@ export async function stripTakeout(
         onProgress?.('Removing your videos…');
 
         const writer = new ZipWriter(new BlobWriter('application/zip'));
+        const decoder = new TextDecoder();
+        const encoder = new TextEncoder();
+
         for (const entry of keep) {
-            const data: Uint8Array = await entry.getData(new Uint8ArrayWriter());
+            let data: Uint8Array = await entry.getData(new Uint8ArrayWriter());
+
+            // History files are the big ones and the only ones with dated rows.
+            if (year && /history\.html$/i.test(entry.filename)) {
+                const filtered = filterHtmlToYear(decoder.decode(data), year);
+                data = encoder.encode(filtered);
+            }
             // Paths are preserved: the backend locates members by basename at any
             // depth, but keeping the original layout means the archive is still a
             // valid Takeout if anyone opens it.

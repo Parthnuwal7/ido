@@ -132,6 +132,7 @@ export default function Home() {
   const [availableYears, setAvailableYears] = useState<number[] | undefined>();
   // const [accessToken, setAccessToken] = useState<string | null>(null);  // (Shelved: Google Connect)
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [originalFile, setOriginalFile] = useState<File | null>(null);
   const [wrappedData, setWrappedData] = useState<WrappedData | null>(null);
   const [currentCard, setCurrentCard] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -141,6 +142,7 @@ export default function Home() {
 
   const handleFileSelect = async (file: File) => {
     setSelectedFile(file);
+    setOriginalFile(file);
     setTrimNote(null);
     setError(null);
 
@@ -150,7 +152,7 @@ export default function Home() {
     // timeout) into a couple of seconds. Failure here is not fatal: stripTakeout
     // hands back the original file and the backend copes.
     try {
-      const result = await stripTakeout(file, setPrepping);
+      const result = await stripTakeout(file, setPrepping, year);
       setSelectedFile(result.file);
       if (result.trimmed) {
         setTrimNote(
@@ -529,7 +531,10 @@ export default function Home() {
               <CardContent>
                 <YearSelector
                   value={year}
-                  onChange={setYear}
+                  onChange={(next) => {
+                    setYear(next);
+                    if (originalFile) void handleFileSelect(originalFile);
+                  }}
                   availableYears={availableYears}
                 />
               </CardContent>
