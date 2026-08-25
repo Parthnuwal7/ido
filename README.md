@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="ido_icon.png" alt="Ido" width="120" />
-</p>
-
 <h1 align="center">Ido</h1>
 
 <p align="center">
