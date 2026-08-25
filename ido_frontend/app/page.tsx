@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TimezoneSelector } from '@/components/timezone-selector';
 import { YearSelector } from '@/components/year-selector';
 import { InterestNamingConsent } from '@/components/interest-naming-consent';
+import { formatBytes, stripTakeout } from '@/lib/strip-takeout';
 import {
   ViewingModeCard,
   DiscoveryArcCard,
@@ -135,9 +136,31 @@ export default function Home() {
   const [currentCard, setCurrentCard] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loadingDemo, setLoadingDemo] = useState(false);
+  const [prepping, setPrepping] = useState<string | null>(null);
+  const [trimNote, setTrimNote] = useState<string | null>(null);
 
-  const handleFileSelect = (file: File) => {
+  const handleFileSelect = async (file: File) => {
     setSelectedFile(file);
+    setTrimNote(null);
+    setError(null);
+
+    // A YouTube export is mostly the user's own uploaded videos, which Ido never
+    // reads -- 581 MB of 612 MB in the archive this was built against. Dropping them
+    // in the browser turns a multi-minute upload (and, on a hosted backend, a proxy
+    // timeout) into a couple of seconds. Failure here is not fatal: stripTakeout
+    // hands back the original file and the backend copes.
+    try {
+      const result = await stripTakeout(file, setPrepping);
+      setSelectedFile(result.file);
+      if (result.trimmed) {
+        setTrimNote(
+          `Trimmed ${formatBytes(result.originalBytes)} down to ` +
+          `${formatBytes(result.finalBytes)} — your videos stay on your device`
+        );
+      }
+    } finally {
+      setPrepping(null);
+    }
   };
 
   /**
@@ -519,6 +542,19 @@ export default function Home() {
               <CardContent>
                 <FileUploader onFileSelect={handleFileSelect} />
 
+                {prepping && (
+                  <p className="mt-3 text-sm text-muted-foreground flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {prepping}
+                  </p>
+                )}
+
+                {trimNote && !prepping && (
+                  <p className="mt-3 text-sm text-green-600 dark:text-green-400">
+                    {trimNote}
+                  </p>
+                )}
+
                 <div className="mt-4 pt-4 border-t">
                   <InterestNamingConsent
                     checked={nameInterests}
@@ -555,7 +591,7 @@ export default function Home() {
             />
             */}
 
-            {selectedFile && timezone && (
+            {selectedFile && timezone && !prepping && (
               <Button
                 onClick={() => handleGenerate()}
                 size="lg"
